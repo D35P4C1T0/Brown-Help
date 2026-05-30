@@ -48,6 +48,8 @@ private:
     void prepareSaturation(double sampleRate, int channels);
     void updateSaturation();
     void processSaturation(juce::AudioBuffer<float>& buffer);
+    float calculateRms(const juce::AudioBuffer<float>& buffer) const;
+    void applyAutoGainCompensation(juce::AudioBuffer<float>& buffer, float inputRms);
     void applyOutputGuard(juce::AudioBuffer<float>& buffer) const;
 
     juce::AudioProcessorValueTreeState parameters;
@@ -64,6 +66,7 @@ private:
     float previousHighPassFrequency = -1.0f;
     int previousHighPassSlope = -1;
     float previousSaturationFrequency = -1.0f;
+    float smoothedAutoGainDb = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BrownHelpProcessor)
 };

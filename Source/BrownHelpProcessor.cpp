@@ -39,6 +39,7 @@ void BrownHelpProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
     previousHighPassFrequency = -1.0f;
     previousHighPassSlope = -1;
     previousSaturationFrequency = -1.0f;
+    smoothedAutoGainDb = 0.0f;
     prepareHighPass(sampleRate, getTotalNumOutputChannels());
     prepareSaturation(sampleRate, getTotalNumOutputChannels());
     updateOversampling(parameterValue<int>(parameters, oversamplingId));
@@ -70,6 +71,7 @@ void BrownHelpProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     if (parameterValue<float>(parameters, bypassId) > 0.5f)
         return;
 
+    const auto inputRms = calculateRms(buffer);
     const auto oversamplingChoice = parameterValue<int>(parameters, oversamplingId);
     updateOversampling(oversamplingChoice);
 
@@ -78,6 +80,7 @@ void BrownHelpProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
         processHighPass(buffer);
         balancer.process(buffer, readSettings());
         processSaturation(buffer);
+        applyAutoGainCompensation(buffer, inputRms);
         applyOutputGuard(buffer);
         return;
     }
@@ -100,6 +103,7 @@ void BrownHelpProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     balancer.process(oversampledBuffer, readSettings());
     processSaturation(oversampledBuffer);
     oversampling->processSamplesDown(block);
+    applyAutoGainCompensation(buffer, inputRms);
     applyOutputGuard(buffer);
 }
 
@@ -473,6 +477,47 @@ void BrownHelpProcessor::processSaturation(juce::AudioBuffer<float>& buffer)
             data[sample] += (saturatedHighBand - highBand) * mix;
         }
     }
+}
+
+float BrownHelpProcessor::calculateRms(const juce::AudioBuffer<float>& buffer) const
+{
+    auto sumSquares = 0.0;
+    auto count = 0;
+
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+    {
+        const auto* data = buffer.getReadPointer(channel);
+
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            const auto value = static_cast<double>(data[sample]);
+            sumSquares += value * value;
+        }
+
+        count += buffer.getNumSamples();
+    }
+
+    if (count == 0)
+        return 0.0f;
+
+    return static_cast<float>(std::sqrt(sumSquares / static_cast<double>(count)));
+}
+
+void BrownHelpProcessor::applyAutoGainCompensation(juce::AudioBuffer<float>& buffer, float inputRms)
+{
+    constexpr auto minimumRms = 0.001f;
+
+    const auto outputRms = calculateRms(buffer);
+
+    if (inputRms < minimumRms || outputRms < minimumRms)
+        return;
+
+    const auto inputDb = juce::Decibels::gainToDecibels(inputRms);
+    const auto outputDb = juce::Decibels::gainToDecibels(outputRms);
+    const auto desiredDb = std::clamp((inputDb - outputDb) * 0.85f, -3.0f, 8.0f);
+    const auto smoothing = 0.92f;
+    smoothedAutoGainDb = smoothing * smoothedAutoGainDb + (1.0f - smoothing) * desiredDb;
+    buffer.applyGain(juce::Decibels::decibelsToGain(smoothedAutoGainDb));
 }
 
 void BrownHelpProcessor::applyOutputGuard(juce::AudioBuffer<float>& buffer) const

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "BrownHelpProcessor.h"
+#include "BrownHelpUiComponents.h"
 
 #include <array>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -21,28 +22,6 @@ private:
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboBoxAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
-
-    class TiltPreview final : public juce::Component,
-                              private juce::Timer
-    {
-    public:
-        explicit TiltPreview(BrownHelpProcessor& processorToUse);
-        void paint(juce::Graphics& graphics) override;
-
-    private:
-        void timerCallback() override;
-
-        BrownHelpProcessor& processor;
-    };
-
-    class FrequencySlider final : public juce::Slider
-    {
-    public:
-        void mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel) override;
-
-    private:
-        float wheelAccumulator = 0.0f;
-    };
 
     void addSlider(juce::Slider& slider, juce::Label& label, const juce::String& text);
     void layoutSlider(juce::Slider& slider, juce::Label& label, juce::Rectangle<int> bounds);

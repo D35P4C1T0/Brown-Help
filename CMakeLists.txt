@@ -40,6 +40,7 @@ target_sources(BrownHelp
         Source/BrownCurveBalancer.cpp
         Source/BrownHelpProcessor.cpp
         Source/BrownHelpEditor.cpp
+        Source/BrownHelpUiComponents.cpp
 )
 
 target_compile_definitions(BrownHelp
