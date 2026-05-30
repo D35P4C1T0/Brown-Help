@@ -93,7 +93,7 @@ jobs:
           rm -rf package dist
           mkdir -p package dist
           cp -R "${plugin_path}" package/
-          cmake -E chdir package tar cf "../dist/${{ matrix.archive }}" --format=zip -- "Brown Help.vst3"
+          cmake -E chdir package cmake -E tar cf "../dist/${{ matrix.archive }}" --format=zip -- "Brown Help.vst3"
 
       - name: Upload packaged VST3
         uses: actions/upload-artifact@v4
