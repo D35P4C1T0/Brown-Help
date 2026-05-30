@@ -61,6 +61,7 @@ target_link_libraries(BrownHelp
 )
 
 option(BROWN_HELP_BUILD_TESTS "Build Brown Help tests" ON)
+option(BROWN_HELP_BUILD_SCREENSHOT_TOOL "Build the Brown Help UI screenshot helper" OFF)
 
 if(BROWN_HELP_BUILD_TESTS)
     enable_testing()
@@ -80,4 +81,34 @@ if(BROWN_HELP_BUILD_TESTS)
     target_include_directories(BrownHelpTests PRIVATE Source)
 
     add_test(NAME BrownHelpTests COMMAND BrownHelpTests)
+endif()
+
+if(BROWN_HELP_BUILD_SCREENSHOT_TOOL)
+    add_executable(BrownHelpUiScreenshot
+        Tools/RenderPluginUi.cpp
+        Source/BrownCurveBalancer.cpp
+        Source/BrownHelpProcessor.cpp
+        Source/BrownHelpEditor.cpp
+        Source/BrownHelpUiComponents.cpp
+    )
+
+    target_include_directories(BrownHelpUiScreenshot PRIVATE Source)
+
+    target_compile_definitions(BrownHelpUiScreenshot
+        PUBLIC
+            JUCE_WEB_BROWSER=0
+            JUCE_USE_CURL=0
+            JUCE_VST3_CAN_REPLACE_VST2=0
+            JucePlugin_Name="Brown Help"
+    )
+
+    target_link_libraries(BrownHelpUiScreenshot
+        PRIVATE
+            juce::juce_audio_utils
+            juce::juce_dsp
+        PUBLIC
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_lto_flags
+            juce::juce_recommended_warning_flags
+    )
 endif()

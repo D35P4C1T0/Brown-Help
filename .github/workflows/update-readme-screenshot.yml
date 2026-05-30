@@ -1,0 +1,42 @@
+name: Update README Screenshot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-screenshot:
+    name: Render plugin UI and update README
+    runs-on: macos-14
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure screenshot build
+        run: cmake -S . -B build-screenshot -DCMAKE_BUILD_TYPE=Release -DBROWN_HELP_BUILD_TESTS=OFF -DBROWN_HELP_BUILD_SCREENSHOT_TOOL=ON
+
+      - name: Build screenshot tool
+        run: cmake --build build-screenshot --config Release --target BrownHelpUiScreenshot
+
+      - name: Render plugin UI PNG
+        run: ./build-screenshot/BrownHelpUiScreenshot docs/plugin-ui.png
+
+      - name: Add screenshot to README
+        run: python3 Tools/update_readme_screenshot.py
+
+      - name: Commit README screenshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md docs/plugin-ui.png
+          if git diff --cached --quiet; then
+            echo "No screenshot changes to commit."
+          else
+            git commit -m "Update README plugin UI screenshot"
+            git push
+          fi

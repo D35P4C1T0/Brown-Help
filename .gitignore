@@ -1,8 +1,11 @@
 build/
 build-release/
+build-screenshot/
 cmake-build-*/
 
 .DS_Store
+__pycache__/
+*.pyc
 
 *.vst3/
 *.component/
