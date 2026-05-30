@@ -2,6 +2,8 @@
 
 Brown Help is a VST3 tonal balancer for podcasts and voice-over work by **D35P Audio**.
 
+![Brown Help plugin UI](docs/plugin-ui.png)
+
 It listens to the incoming voice, compares its broad spectral shape to a brown-noise-style tilt, and applies gentle adaptive EQ so dialogue settles closer to that target. It is meant as a practical "make this voice sit better" tool, not as a surgical repair plugin or a loudness maximizer.
 
 ## Status
