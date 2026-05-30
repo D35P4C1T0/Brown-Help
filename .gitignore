@@ -2,6 +2,8 @@ build/
 build-release/
 build-screenshot/
 cmake-build-*/
+dist/
+package/
 
 .DS_Store
 __pycache__/

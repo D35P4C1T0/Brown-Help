@@ -1,0 +1,126 @@
+name: Build VST3 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag, for example v0.1.0"
+        required: true
+        default: "v0.1.0"
+      release_name:
+        description: "Release title"
+        required: true
+        default: "Brown Help v0.1.0"
+      prerelease:
+        description: "Mark release as prerelease"
+        required: true
+        type: boolean
+        default: true
+      draft:
+        description: "Create as draft release"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            label: linux
+            archive: BrownHelp-linux-vst3.zip
+          - os: macos-14
+            label: macos
+            archive: BrownHelp-macos-vst3.zip
+          - os: windows-2022
+            label: windows
+            archive: BrownHelp-windows-vst3.zip
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libfreetype6-dev \
+            libgtk-3-dev \
+            libjack-jackd2-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev
+
+      - name: Configure Release
+        run: cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release -DBROWN_HELP_BUILD_TESTS=ON
+
+      - name: Build Release VST3
+        run: cmake --build build-release --config Release --target BrownHelp_VST3
+
+      - name: Build tests
+        run: cmake --build build-release --config Release --target BrownHelpTests
+
+      - name: Run tests
+        run: ctest --test-dir build-release --build-config Release --output-on-failure
+
+      - name: Package VST3
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          plugin_path="$(find build-release -name 'Brown Help.vst3' -print -quit)"
+
+          if [[ -z "${plugin_path}" ]]; then
+            echo "Could not find Brown Help.vst3"
+            find build-release -maxdepth 6 -print
+            exit 1
+          fi
+
+          echo "Packaging ${plugin_path}"
+          rm -rf package dist
+          mkdir -p package dist
+          cp -R "${plugin_path}" package/
+          cmake -E chdir package tar cf "../dist/${{ matrix.archive }}" --format=zip -- "Brown Help.vst3"
+
+      - name: Upload packaged VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}-vst3
+          path: dist/${{ matrix.archive }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Download packaged VST3 assets
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: ${{ inputs.release_name }}
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: release-assets/*.zip
