@@ -13,9 +13,11 @@ BrownHelpEditor::BrownHelpEditor(BrownHelpProcessor& processorToUse)
       audioProcessor(processorToUse),
       tiltPreview(processorToUse)
 {
-    curveBox.addItem("Gentle Brown", 1);
-    curveBox.addItem("Brown", 2);
-    curveBox.addItem("Dark Brown", 3);
+    setLookAndFeel(&lookAndFeel);
+
+    curveBox.addItem("Gentle / 3 dB", 1);
+    curveBox.addItem("Brown / 6 dB", 2);
+    curveBox.addItem("Dark / 9 dB", 3);
     addAndMakeVisible(curveBox);
     addAndMakeVisible(curveLabel);
     curveLabel.setText("Curve", juce::dontSendNotification);
@@ -25,13 +27,13 @@ BrownHelpEditor::BrownHelpEditor(BrownHelpProcessor& processorToUse)
     oversamplingBox.addItem("4x", 3);
     addAndMakeVisible(oversamplingBox);
     addAndMakeVisible(oversamplingLabel);
-    oversamplingLabel.setText("Oversampling", juce::dontSendNotification);
+    oversamplingLabel.setText("SAT QUALITY", juce::dontSendNotification);
 
     addAndMakeVisible(bypassButton);
-    bypassButton.setButtonText("Bypass");
+    bypassButton.setButtonText("BYPASS");
     bypassButton.setClickingTogglesState(true);
 
-    addChildComponent(helpButton);
+    addAndMakeVisible(helpButton);
     helpButton.setButtonText("?");
     helpButton.onClick = [this]
     {
@@ -40,14 +42,14 @@ BrownHelpEditor::BrownHelpEditor(BrownHelpProcessor& processorToUse)
     };
 
     addAndMakeVisible(tiltFlipButton);
-    tiltFlipButton.setButtonText("Flip");
+    tiltFlipButton.setButtonText("FLIP");
     tiltFlipButton.setClickingTogglesState(true);
 
     highPassSlopeBox.addItem("12 dB/oct", 1);
     highPassSlopeBox.addItem("24 dB/oct", 2);
     addAndMakeVisible(highPassSlopeBox);
     addAndMakeVisible(highPassSlopeLabel);
-    highPassSlopeLabel.setText("HP Slope", juce::dontSendNotification);
+    highPassSlopeLabel.setText("Slope", juce::dontSendNotification);
 
     addAndMakeVisible(highPassButton);
     highPassButton.setButtonText({});
@@ -60,35 +62,18 @@ BrownHelpEditor::BrownHelpEditor(BrownHelpProcessor& processorToUse)
     addSlider(mixSlider, mixLabel, "Mix");
     addSlider(lowFrequencySlider, lowFrequencyLabel, "Low");
     addSlider(highFrequencySlider, highFrequencyLabel, "High");
-    addSlider(maxCorrectionSlider, maxCorrectionLabel, "Max Correction (dB)");
+    addSlider(maxCorrectionSlider, maxCorrectionLabel, "Correction");
     addSlider(speedSlider, speedLabel, "Speed");
-    addSlider(highPassFrequencySlider, highPassFrequencyLabel, "HP Frequency");
-    addSlider(saturationFrequencySlider, saturationFrequencyLabel, "Sat Frequency");
-    addSlider(saturationDriveSlider, saturationDriveLabel, "Sat Drive");
-    addSlider(saturationMixSlider, saturationMixLabel, "Sat Mix");
+    addSlider(highPassFrequencySlider, highPassFrequencyLabel, "Cutoff");
+    addSlider(saturationFrequencySlider, saturationFrequencyLabel, "Crossover");
+    addSlider(saturationDriveSlider, saturationDriveLabel, "Drive");
+    addSlider(saturationMixSlider, saturationMixLabel, "Amount");
     addAndMakeVisible(tiltPreview);
 
-    mixSlider.textFromValueFunction = ParameterFormatting::roundedPercent01;
-    mixSlider.valueFromTextFunction = ParameterFormatting::percent01FromText;
-
-    for (auto* slider : { &strengthSlider, &speedSlider, &saturationDriveSlider, &saturationMixSlider })
+    for (auto* label : { &curveLabel, &oversamplingLabel, &highPassSlopeLabel })
     {
-        slider->textFromValueFunction = ParameterFormatting::percent01;
-        slider->valueFromTextFunction = ParameterFormatting::percent01FromText;
-    }
-
-    tiltSlider.textFromValueFunction = ParameterFormatting::tiltPercent;
-    tiltSlider.valueFromTextFunction = ParameterFormatting::numberFromText;
-    maxCorrectionSlider.textFromValueFunction = ParameterFormatting::decibels;
-    maxCorrectionSlider.valueFromTextFunction = ParameterFormatting::numberFromText;
-
-    for (auto* slider : { static_cast<juce::Slider*>(&lowFrequencySlider),
-                          static_cast<juce::Slider*>(&highFrequencySlider),
-                          &highPassFrequencySlider,
-                          &saturationFrequencySlider })
-    {
-        slider->textFromValueFunction = ParameterFormatting::frequency;
-        slider->valueFromTextFunction = ParameterFormatting::frequencyFromText;
+        label->setColour(juce::Label::textColourId, juce::Colour(mutedTextColour));
+        label->setFont(juce::FontOptions(10.0f, juce::Font::bold));
     }
 
     for (auto* slider : { &tiltSlider, &strengthSlider, &maxCorrectionSlider, &speedSlider,
@@ -121,87 +106,133 @@ BrownHelpEditor::BrownHelpEditor(BrownHelpProcessor& processorToUse)
     saturationDriveAttachment = std::make_unique<SliderAttachment>(audioProcessor.getParameters(), saturationDriveId, saturationDriveSlider);
     saturationMixAttachment = std::make_unique<SliderAttachment>(audioProcessor.getParameters(), saturationMixId, saturationMixSlider);
 
+    // Attachments install the parameter's default text conversion, so apply the
+    // compact UI formatting after the attachments have been created.
+    mixSlider.textFromValueFunction = ParameterFormatting::roundedPercent01;
+    mixSlider.valueFromTextFunction = ParameterFormatting::percent01FromText;
+
+    for (auto* slider : { &strengthSlider, &speedSlider, &saturationDriveSlider, &saturationMixSlider })
+    {
+        slider->textFromValueFunction = ParameterFormatting::percent01;
+        slider->valueFromTextFunction = ParameterFormatting::percent01FromText;
+    }
+
+    tiltSlider.textFromValueFunction = ParameterFormatting::tiltPercent;
+    tiltSlider.valueFromTextFunction = ParameterFormatting::numberFromText;
+    maxCorrectionSlider.textFromValueFunction = ParameterFormatting::decibels;
+    maxCorrectionSlider.valueFromTextFunction = ParameterFormatting::numberFromText;
+
+    for (auto* slider : { static_cast<juce::Slider*>(&lowFrequencySlider),
+                          static_cast<juce::Slider*>(&highFrequencySlider),
+                          &highPassFrequencySlider,
+                          &saturationFrequencySlider })
+    {
+        slider->textFromValueFunction = ParameterFormatting::frequency;
+        slider->valueFromTextFunction = ParameterFormatting::frequencyFromText;
+    }
+
+    for (auto* slider : { &tiltSlider, &strengthSlider, &mixSlider, static_cast<juce::Slider*>(&lowFrequencySlider),
+                          static_cast<juce::Slider*>(&highFrequencySlider), &maxCorrectionSlider, &speedSlider,
+                          &highPassFrequencySlider, &saturationFrequencySlider, &saturationDriveSlider,
+                          &saturationMixSlider })
+        slider->updateText();
+
     updateSectionState();
     startTimerHz(12);
-    setSize(960, 570);
+    setSize(980, 560);
+}
+
+BrownHelpEditor::~BrownHelpEditor()
+{
+    setLookAndFeel(nullptr);
 }
 
 void BrownHelpEditor::paint(juce::Graphics& graphics)
 {
     graphics.fillAll(juce::Colour(backgroundColour));
     graphics.setColour(juce::Colour(accentColour));
-    graphics.setFont(juce::FontOptions(24.0f));
-    graphics.drawText("~", 22, 14, 42, 30, juce::Justification::centred);
+    graphics.fillRect(18, 18, 3, 25);
 
     graphics.setColour(juce::Colour(textColour));
-    graphics.setFont(juce::FontOptions(24.0f, juce::Font::bold));
-    graphics.drawText("Brown Help", 66, 14, 180, 30, juce::Justification::centredLeft);
+    graphics.setFont(juce::FontOptions(18.0f, juce::Font::bold));
+    graphics.drawText("BROWN HELP", 30, 15, 150, 24, juce::Justification::centredLeft);
 
     graphics.setColour(juce::Colour(mutedTextColour));
-    graphics.setFont(juce::FontOptions(15.0f));
-    graphics.drawText("D35P Audio", 242, 18, 140, 28, juce::Justification::centredLeft);
+    graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+    graphics.drawText("D35P AUDIO  /  ADAPTIVE TONE SHAPER", 177, 17, 260, 22, juce::Justification::centredLeft);
 
-    auto area = getLocalBounds().reduced(10);
-    area.removeFromTop(54);
-    drawPanel(graphics, area.removeFromTop(214), {});
+    graphics.setColour(juce::Colour(outlineColour));
+    graphics.drawHorizontalLine(59, 16.0f, static_cast<float>(getWidth() - 16));
+
+    auto area = getLocalBounds().reduced(16);
+    area.removeFromTop(44);
     area.removeFromTop(8);
+    area.removeFromTop(188);
+    area.removeFromTop(10);
+    auto deck = area.removeFromTop(278);
 
-    auto panelRow = area.removeFromTop(238);
-    const auto gap = 8;
-    const auto panelWidth = (panelRow.getWidth() - gap * 3) / 4;
-    drawPanel(graphics, panelRow.removeFromLeft(panelWidth), "TARGET / TILT");
-    panelRow.removeFromLeft(gap);
-    drawPanel(graphics, panelRow.removeFromLeft(panelWidth), "MIX / RANGE");
-    panelRow.removeFromLeft(gap);
-    auto highPassBounds = panelRow.removeFromLeft(panelWidth);
-    drawPanel(graphics, highPassBounds, "HIGH-PASS");
-    panelRow.removeFromLeft(gap);
-    auto saturationBounds = panelRow;
-    drawPanel(graphics, saturationBounds, "SATURATION");
+    graphics.setColour(juce::Colour(panelColour));
+    graphics.fillRoundedRectangle(deck.toFloat(), 2.0f);
+    graphics.setColour(juce::Colour(outlineColour));
+    graphics.drawRoundedRectangle(deck.toFloat().reduced(0.5f), 2.0f, 1.0f);
 
-    if (parameter(audioProcessor.getParameters(), highPassEnabledId) < 0.5f)
-    {
-        graphics.setColour(juce::Colour(backgroundColour).withAlpha(0.48f));
-        graphics.fillRoundedRectangle(highPassBounds.reduced(1).toFloat(), 5.0f);
-    }
+    auto sections = deck;
+    auto shapeSection = sections.removeFromLeft(400);
+    auto rangeSection = sections.removeFromLeft(220);
+    auto utilitySection = sections;
 
-    if (parameter(audioProcessor.getParameters(), saturationEnabledId) < 0.5f)
-    {
-        graphics.setColour(juce::Colour(backgroundColour).withAlpha(0.48f));
-        graphics.fillRoundedRectangle(saturationBounds.reduced(1).toFloat(), 5.0f);
-    }
+    graphics.setColour(juce::Colour(outlineColour));
+    graphics.drawVerticalLine(shapeSection.getRight(), static_cast<float>(deck.getY() + 12), static_cast<float>(deck.getBottom() - 12));
+    graphics.drawVerticalLine(rangeSection.getRight(), static_cast<float>(deck.getY() + 12), static_cast<float>(deck.getBottom() - 12));
+
+    drawSectionTitle(graphics, shapeSection, "SHAPE");
+    drawSectionTitle(graphics, rangeSection, "RANGE / BLEND");
+
+    auto highPassSection = utilitySection.removeFromTop(130);
+    auto saturationSection = utilitySection;
+    drawSectionTitle(graphics, highPassSection, "FILTER");
+    drawSectionTitle(graphics, saturationSection, "COLOR");
+
+    graphics.setColour(juce::Colour(outlineColour));
+    graphics.drawHorizontalLine(
+        highPassSection.getBottom(), static_cast<float>(highPassSection.getX() + 12), static_cast<float>(highPassSection.getRight() - 12));
 
     if (parameter(audioProcessor.getParameters(), bypassId) >= 0.5f)
     {
-        graphics.setColour(juce::Colour(backgroundColour).withAlpha(0.62f));
-        auto content = getLocalBounds().reduced(10);
-        content.removeFromTop(54);
-        graphics.fillRoundedRectangle(content.toFloat(), 5.0f);
+        auto content = getLocalBounds().reduced(16);
+        content.removeFromTop(52);
+        graphics.setColour(juce::Colour(backgroundColour).withAlpha(0.72f));
+        graphics.fillRect(content);
+        graphics.setColour(juce::Colour(mutedTextColour));
+        graphics.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+        graphics.drawText("BYPASSED", content, juce::Justification::centred);
     }
 
     if (showHelpPanel)
     {
-        auto helpBounds = getLocalBounds().withSizeKeepingCentre(620, 260).translated(0, -40);
-        graphics.setColour(juce::Colours::black.withAlpha(0.35f));
-        graphics.fillRoundedRectangle(getLocalBounds().reduced(10).toFloat(), 5.0f);
-        graphics.setColour(juce::Colour(0xff222a2f));
-        graphics.fillRoundedRectangle(helpBounds.toFloat(), 7.0f);
+        auto helpBounds = getLocalBounds().withSizeKeepingCentre(560, 250);
+        graphics.setColour(juce::Colours::black.withAlpha(0.62f));
+        graphics.fillRect(getLocalBounds());
+        graphics.setColour(juce::Colour(panelColour));
+        graphics.fillRoundedRectangle(helpBounds.toFloat(), 2.0f);
+        graphics.setColour(juce::Colour(outlineColour));
+        graphics.drawRoundedRectangle(helpBounds.toFloat().reduced(0.5f), 2.0f, 1.0f);
         graphics.setColour(juce::Colour(accentColour));
-        graphics.drawRoundedRectangle(helpBounds.toFloat().reduced(0.5f), 7.0f, 1.2f);
+        graphics.fillRect(helpBounds.getX(), helpBounds.getY(), 3, helpBounds.getHeight());
 
-        helpBounds.reduce(22, 18);
+        helpBounds.reduce(26, 20);
         graphics.setColour(juce::Colour(textColour));
-        graphics.setFont(juce::FontOptions(18.0f, juce::Font::bold));
-        graphics.drawText("How Brown Help Works", helpBounds.removeFromTop(28), juce::Justification::centredLeft);
+        graphics.setFont(juce::FontOptions(15.0f, juce::Font::bold));
+        graphics.drawText("SIGNAL FLOW", helpBounds.removeFromTop(24), juce::Justification::centredLeft);
 
         graphics.setColour(juce::Colour(mutedTextColour));
-        graphics.setFont(juce::FontOptions(14.0f));
+        graphics.setFont(juce::FontOptions(12.0f));
         graphics.drawFittedText(
-            "Brown Help gently shapes voice toward a tilt curve.\n\n"
-            "Signal chain: High Pass -> Adaptive Correction -> High Saturation -> Output Guard\n\n"
-            "Low/High set where correction works. They do not cut audio.\n"
-            "High Pass is the real low-cut filter, before correction.\n"
-            "Saturation is post-EQ and affects only the high band.",
+            "FILTER  >  ADAPTIVE CORRECTION  >  COLOR  >  OUTPUT GUARD\n\n"
+            "The amber line is the target. Teal shows the correction being applied.\n"
+            "Low and High limit analysis; they do not remove audio.\n"
+            "Filter is the actual low cut. Color saturates only the upper band.\n"
+            "Sat Quality controls oversampling for the nonlinear stage.",
             helpBounds,
             juce::Justification::topLeft,
             8);
@@ -210,59 +241,56 @@ void BrownHelpEditor::paint(juce::Graphics& graphics)
 
 void BrownHelpEditor::resized()
 {
-    auto area = getLocalBounds().reduced(10);
-    auto header = area.removeFromTop(54);
-    auto headerRight = header.removeFromRight(300);
-    layoutCombo(oversamplingBox, oversamplingLabel, headerRight.removeFromLeft(156).withTrimmedTop(6).withHeight(42));
+    auto area = getLocalBounds().reduced(16);
+    auto header = area.removeFromTop(44);
+    auto headerRight = header.removeFromRight(334);
+    layoutCombo(oversamplingBox, oversamplingLabel, headerRight.removeFromLeft(150).withTrimmedTop(1).withHeight(40));
     headerRight.removeFromLeft(12);
-    bypassButton.setBounds(headerRight.removeFromLeft(100).withTrimmedTop(16).withHeight(26));
+    bypassButton.setBounds(headerRight.removeFromLeft(88).withTrimmedTop(9).withHeight(25));
+    headerRight.removeFromLeft(10);
+    helpButton.setBounds(headerRight.removeFromLeft(28).withTrimmedTop(9).withHeight(25));
 
-    tiltPreview.setBounds(area.removeFromTop(214).reduced(10));
     area.removeFromTop(8);
+    tiltPreview.setBounds(area.removeFromTop(188));
+    area.removeFromTop(10);
 
-    auto panelRow = area.removeFromTop(238);
-    const auto gap = 8;
-    const auto panelWidth = (panelRow.getWidth() - gap * 3) / 4;
+    auto deck = area.removeFromTop(278);
+    auto shapeSection = deck.removeFromLeft(400).reduced(14);
+    auto rangeSection = deck.removeFromLeft(220).reduced(14);
+    auto utilitySection = deck;
 
-    auto targetPanel = panelRow.removeFromLeft(panelWidth).reduced(14);
-    targetPanel.removeFromTop(34);
-    auto curveRow = targetPanel.removeFromTop(52);
+    shapeSection.removeFromTop(30);
+    auto curveRow = shapeSection.removeFromTop(42);
     auto flipArea = curveRow.removeFromRight(54);
-    layoutCombo(curveBox, curveLabel, curveRow.reduced(0, 0));
-    tiltFlipButton.setBounds(flipArea.withTrimmedTop(18).withHeight(28));
-    targetPanel.removeFromTop(8);
-    layoutHorizontalSlider(tiltSlider, tiltLabel, targetPanel.removeFromTop(44));
-    layoutHorizontalSlider(strengthSlider, strengthLabel, targetPanel.removeFromTop(44));
-    layoutHorizontalSlider(maxCorrectionSlider, maxCorrectionLabel, targetPanel.removeFromTop(44));
-    layoutHorizontalSlider(speedSlider, speedLabel, targetPanel.removeFromTop(44));
+    layoutCombo(curveBox, curveLabel, curveRow);
+    tiltFlipButton.setBounds(flipArea.withTrimmedTop(15).withHeight(24));
+    shapeSection.removeFromTop(4);
+    layoutHorizontalSlider(tiltSlider, tiltLabel, shapeSection.removeFromTop(43));
+    layoutHorizontalSlider(strengthSlider, strengthLabel, shapeSection.removeFromTop(43));
+    layoutHorizontalSlider(maxCorrectionSlider, maxCorrectionLabel, shapeSection.removeFromTop(43));
+    layoutHorizontalSlider(speedSlider, speedLabel, shapeSection.removeFromTop(43));
 
-    panelRow.removeFromLeft(gap);
-    auto mixPanel = panelRow.removeFromLeft(panelWidth).reduced(14);
-    mixPanel.removeFromTop(34);
-    layoutSlider(mixSlider, mixLabel, mixPanel.removeFromTop(108).withSizeKeepingCentre(128, 108));
-    mixPanel.removeFromTop(12);
-    layoutInlineSlider(lowFrequencySlider, lowFrequencyLabel, mixPanel.removeFromTop(28));
-    mixPanel.removeFromTop(10);
-    layoutInlineSlider(highFrequencySlider, highFrequencyLabel, mixPanel.removeFromTop(28));
+    rangeSection.removeFromTop(30);
+    layoutSlider(mixSlider, mixLabel, rangeSection.removeFromTop(112).withSizeKeepingCentre(112, 112));
+    rangeSection.removeFromTop(9);
+    layoutInlineSlider(lowFrequencySlider, lowFrequencyLabel, rangeSection.removeFromTop(36));
+    rangeSection.removeFromTop(8);
+    layoutInlineSlider(highFrequencySlider, highFrequencyLabel, rangeSection.removeFromTop(36));
 
-    panelRow.removeFromLeft(gap);
-    auto highPassPanelBounds = panelRow.removeFromLeft(panelWidth);
-    highPassButton.setBounds(highPassPanelBounds.getRight() - 40, highPassPanelBounds.getY() + 9, 24, 24);
-    auto highPassPanel = highPassPanelBounds.reduced(14);
-    highPassPanel.removeFromTop(48);
-    layoutHorizontalSlider(highPassFrequencySlider, highPassFrequencyLabel, highPassPanel.removeFromTop(48));
-    highPassPanel.removeFromTop(10);
-    layoutCombo(highPassSlopeBox, highPassSlopeLabel, highPassPanel.removeFromTop(54));
+    auto highPassSection = utilitySection.removeFromTop(130);
+    highPassButton.setBounds(highPassSection.getRight() - 46, highPassSection.getY() + 9, 34, 18);
+    auto highPassControls = highPassSection.reduced(14);
+    highPassControls.removeFromTop(30);
+    layoutHorizontalSlider(highPassFrequencySlider, highPassFrequencyLabel, highPassControls.removeFromTop(40));
+    layoutCombo(highPassSlopeBox, highPassSlopeLabel, highPassControls.removeFromTop(43));
 
-    panelRow.removeFromLeft(gap);
-    auto saturationPanelBounds = panelRow;
-    saturationButton.setBounds(saturationPanelBounds.getRight() - 40, saturationPanelBounds.getY() + 9, 24, 24);
-    auto saturationPanel = saturationPanelBounds.reduced(14);
-    saturationPanel.removeFromTop(48);
-    layoutHorizontalSlider(saturationFrequencySlider, saturationFrequencyLabel, saturationPanel.removeFromTop(48));
-    layoutHorizontalSlider(saturationDriveSlider, saturationDriveLabel, saturationPanel.removeFromTop(48));
-    layoutHorizontalSlider(saturationMixSlider, saturationMixLabel, saturationPanel.removeFromTop(48));
-
+    auto saturationSection = utilitySection;
+    saturationButton.setBounds(saturationSection.getRight() - 46, saturationSection.getY() + 9, 34, 18);
+    auto saturationControls = saturationSection.reduced(14);
+    saturationControls.removeFromTop(30);
+    layoutHorizontalSlider(saturationFrequencySlider, saturationFrequencyLabel, saturationControls.removeFromTop(30));
+    layoutHorizontalSlider(saturationDriveSlider, saturationDriveLabel, saturationControls.removeFromTop(30));
+    layoutHorizontalSlider(saturationMixSlider, saturationMixLabel, saturationControls.removeFromTop(30));
 }
 
 void BrownHelpEditor::addSlider(juce::Slider& slider, juce::Label& label, const juce::String& text)
@@ -272,16 +300,17 @@ void BrownHelpEditor::addSlider(juce::Slider& slider, juce::Label& label, const 
 
     slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 68, 16);
-    slider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(0xffb8c0aa));
-    slider.setColour(juce::Slider::thumbColourId, juce::Colour(0xfff4eee3));
-    slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xfff4eee3));
+    slider.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour(accentColour));
+    slider.setColour(juce::Slider::thumbColourId, juce::Colour(textColour));
+    slider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(textColour));
     slider.setColour(juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     slider.setColour(juce::Slider::trackColourId, juce::Colour(accentColour));
-    slider.setColour(juce::Slider::backgroundColourId, juce::Colour(0xff4a5052));
+    slider.setColour(juce::Slider::backgroundColourId, juce::Colour(0xff3a4043));
 
     label.setText(text, juce::dontSendNotification);
     label.setJustificationType(juce::Justification::centredLeft);
-    label.setColour(juce::Label::textColourId, juce::Colour(0xfff4eee3));
+    label.setColour(juce::Label::textColourId, juce::Colour(mutedTextColour));
+    label.setFont(juce::FontOptions(11.0f, juce::Font::bold));
 }
 
 void BrownHelpEditor::layoutSlider(juce::Slider& slider, juce::Label& label, juce::Rectangle<int> bounds)
@@ -313,22 +342,15 @@ void BrownHelpEditor::layoutCombo(juce::ComboBox& comboBox, juce::Label& label, 
     comboBox.setBounds(bounds);
 }
 
-void BrownHelpEditor::drawPanel(juce::Graphics& graphics, juce::Rectangle<int> bounds, const juce::String& title)
+void BrownHelpEditor::drawSectionTitle(juce::Graphics& graphics,
+                                      juce::Rectangle<int> bounds,
+                                      const juce::String& title)
 {
-    auto panel = bounds.toFloat();
-    graphics.setColour(juce::Colour(panelColour));
-    graphics.fillRoundedRectangle(panel, 5.0f);
-    graphics.setColour(juce::Colour(outlineColour));
-    graphics.drawRoundedRectangle(panel.reduced(0.5f), 5.0f, 1.0f);
-
-    if (title.isNotEmpty())
-    {
-        graphics.setColour(juce::Colour(textColour));
-        graphics.setFont(juce::FontOptions(13.0f, juce::Font::bold));
-        graphics.drawText(title, bounds.getX() + 14, bounds.getY() + 12, bounds.getWidth() - 28, 18, juce::Justification::centredLeft);
-        graphics.setColour(juce::Colour(accentColour));
-        graphics.drawHorizontalLine(bounds.getY() + 36, static_cast<float>(bounds.getX() + 14), static_cast<float>(bounds.getRight() - 14));
-    }
+    graphics.setColour(juce::Colour(mutedTextColour));
+    graphics.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+    graphics.drawText(title, bounds.getX() + 14, bounds.getY() + 9, bounds.getWidth() - 28, 18, juce::Justification::centredLeft);
+    graphics.setColour(juce::Colour(accentColour));
+    graphics.fillRect(bounds.getX() + 14, bounds.getY() + 29, 22, 1);
 }
 
 void BrownHelpEditor::configureHorizontalSlider(juce::Slider& slider)
@@ -385,16 +407,16 @@ void BrownHelpEditor::updateSectionState()
                              static_cast<juce::Component*>(&oversamplingLabel) })
         component->setAlpha(bypassed ? 0.38f : 1.0f);
 
-    bypassButton.setColour(juce::TextButton::buttonColourId, bypassed ? juce::Colour(accentColour) : juce::Colour(0xff242b2f));
+    bypassButton.setColour(juce::TextButton::buttonColourId, bypassed ? juce::Colour(accentColour) : juce::Colour(plotColour));
     bypassButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(accentColour));
     bypassButton.setColour(juce::TextButton::textColourOffId, bypassed ? juce::Colour(backgroundColour) : juce::Colour(textColour));
     bypassButton.setColour(juce::TextButton::textColourOnId, juce::Colour(backgroundColour));
 
-    helpButton.setColour(juce::TextButton::buttonColourId, juce::Colour(0xff242b2f));
+    helpButton.setColour(juce::TextButton::buttonColourId, juce::Colour(plotColour));
     helpButton.setColour(juce::TextButton::textColourOffId, juce::Colour(textColour));
 
     const auto tiltFlipped = parameter(audioProcessor.getParameters(), tiltFlipId) >= 0.5f;
-    tiltFlipButton.setColour(juce::TextButton::buttonColourId, tiltFlipped ? juce::Colour(accentColour) : juce::Colour(0xff242b2f));
+    tiltFlipButton.setColour(juce::TextButton::buttonColourId, tiltFlipped ? juce::Colour(accentColour) : juce::Colour(plotColour));
     tiltFlipButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour(accentColour));
     tiltFlipButton.setColour(juce::TextButton::textColourOffId, tiltFlipped ? juce::Colour(backgroundColour) : juce::Colour(textColour));
     tiltFlipButton.setColour(juce::TextButton::textColourOnId, juce::Colour(backgroundColour));

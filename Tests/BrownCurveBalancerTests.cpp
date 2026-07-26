@@ -31,9 +31,6 @@ int main()
     if (! nearlyEqual(BrownCurveBalancer::targetDbForFrequency(500.0f, 1000.0f, -4.5f), 4.5f))
         return fail("one octave down should invert tilt");
 
-    if (! nearlyEqual(BrownCurveBalancer::curveTilt(BrownCurveBalancer::Curve::brown, -4.5f), -4.5f))
-        return fail("brown curve should use user tilt");
-
     if (! nearlyEqual(BrownHelp::tiltControlToDbPerOctave(100.0f, 1, false), -6.0f))
         return fail("minimum tilt control mismatch");
 
@@ -42,6 +39,12 @@ int main()
 
     if (! nearlyEqual(BrownHelp::tiltControlToDbPerOctave(25.0f, 1, false), -1.5f, 0.02f))
         return fail("default tilt control mismatch");
+
+    if (! nearlyEqual(BrownHelp::tiltControlToDbPerOctave(100.0f, 0, false), -3.0f))
+        return fail("gentle curve range mismatch");
+
+    if (! nearlyEqual(BrownHelp::tiltControlToDbPerOctave(100.0f, 2, false), -9.0f))
+        return fail("dark curve range mismatch");
 
     BrownCurveBalancer balancer;
     balancer.prepare(48000.0, 512, 1);
@@ -58,6 +61,17 @@ int main()
             return fail("silence processing produced non-finite sample");
     }
 
+    const auto silentAnalysis = balancer.getAnalysisSnapshot();
+
+    if (silentAnalysis.signalPresent)
+        return fail("silence should not engage the adaptive correction");
+
+    for (const auto correction : silentAnalysis.correctionDb)
+    {
+        if (! nearlyEqual(correction, 0.0f))
+            return fail("silence should leave correction at unity");
+    }
+
     juce::AudioBuffer<float> tone(1, 4096);
 
     for (int sample = 0; sample < tone.getNumSamples(); ++sample)
@@ -68,17 +82,32 @@ int main()
 
     settings.strength = 1.0f;
     settings.maxCorrectionDb = 18.0f;
+    settings.mix = 0.0f;
+
+    juce::AudioBuffer<float> originalTone;
+    originalTone.makeCopyOf(tone);
 
     for (int block = 0; block < 20; ++block)
         balancer.process(tone, settings);
 
-    auto peak = 0.0f;
-
     for (int sample = 0; sample < tone.getNumSamples(); ++sample)
-        peak = std::max(peak, std::abs(tone.getSample(0, sample)));
+    {
+        if (! nearlyEqual(tone.getSample(0, sample), originalTone.getSample(0, sample), 0.00001f))
+            return fail("zero-percent mix should be transparent");
+    }
 
-    if (peak > 0.981f)
-        return fail("output guard should prevent runaway gain");
+    const auto toneAnalysis = balancer.getAnalysisSnapshot();
+
+    if (! toneAnalysis.signalPresent)
+        return fail("audible input should engage analysis");
+
+    auto correctionMagnitude = 0.0f;
+
+    for (const auto correction : toneAnalysis.correctionDb)
+        correctionMagnitude = std::max(correctionMagnitude, std::abs(correction));
+
+    if (correctionMagnitude < 0.05f)
+        return fail("strongly non-target input should produce a correction");
 
     std::cout << "BrownHelpTests passed\n";
     return 0;

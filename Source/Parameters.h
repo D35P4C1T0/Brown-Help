@@ -28,13 +28,16 @@ inline float tiltControlToDbPerOctave(float controlValue, int curveChoice, bool 
 {
     const auto normalised = std::clamp(controlValue, 0.0f, 100.0f) / 100.0f;
     const auto sign = flipped ? 1.0f : -1.0f;
-    const auto baseSlope = sign * normalised * 6.0f;
-
-    switch (curveChoice)
+    const auto maximumSlope = [curveChoice]
     {
-        case 0: return baseSlope * 0.65f;
-        case 2: return baseSlope;
-        default: return baseSlope;
-    }
+        switch (curveChoice)
+        {
+            case 0: return 3.0f;
+            case 2: return 9.0f;
+            default: return 6.0f;
+        }
+    }();
+
+    return sign * normalised * maximumSlope;
 }
 }

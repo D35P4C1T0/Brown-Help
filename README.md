@@ -19,12 +19,14 @@ It listens to the incoming voice, compares its broad spectral shape to a brown-n
 
 - Adaptive spectral correction toward a brown-style target curve
 - Musical `Tilt` control from `0` to `100`, plus `Flip` for positive tilt
+- Gentle, Brown, and Dark target ranges up to `3`, `6`, and `9 dB/oct`
 - `Mix`, `Strength`, `Correction`, and `Speed` controls
 - User-selectable correction range with `Low` and `High`
 - Optional high-pass filter with `12 dB/oct` or `24 dB/oct` slope
 - Optional high-band saturation for soft voice presence
-- Automatic output gain compensation and final output guard
-- 1x, 2x, and 4x oversampling
+- Smooth automatic output gain compensation and final output guard
+- 1x, 2x, and 4x saturation oversampling with reported host latency
+- Live graph of the correction currently being applied
 - Compact custom JUCE UI
 
 ## Signal Flow
@@ -53,18 +55,18 @@ Example: if `Low` is set to `100 Hz`, Brown Help stops correcting below `100 Hz`
 
 ### Adaptive EQ
 
-The processor uses log-spaced analysis bands inside the selected range. Each band tracks incoming energy, compares it to the selected tilt curve, then applies a smoothed peaking-EQ correction.
+The processor uses log-spaced analysis bands inside the selected range. It smooths the detected spectrum across neighbouring bands so it follows broad tone instead of chasing individual harmonics and room resonances. A lower-density bank of peaking filters then applies the correction.
 
-Cuts are stronger than boosts by design. This lets the plugin tame harsh or over-present areas without aggressively lifting room tone, hiss, or noise.
+Cuts are stronger than boosts by design. Low-level bands receive less boost, and analysis disengages below a signal threshold. This lets the plugin tame harsh or over-present areas without aggressively lifting room tone, hiss, or noise.
 
 ### Tilt
 
 The `Tilt` knob is a musical control, not a raw slope parameter.
 
 - `0` means flat target.
-- `100` maps to the maximum negative brown-style slope.
+- `100` maps to the selected curve's maximum negative slope.
 - `Flip` mirrors the curve to the positive side.
-- Curve choices currently change the available slope amount, not the correction algorithm itself.
+- Gentle, Brown, and Dark provide maximum slopes of `3`, `6`, and `9 dB/oct`.
 
 ### Saturation
 
@@ -72,20 +74,20 @@ The `Tilt` knob is a musical control, not a raw slope parameter.
 
 ### Auto Gain And Output Guard
 
-After EQ and saturation, Brown Help applies lightweight automatic gain compensation to reduce perceived level drops. A final output guard catches runaway peaks and prevents large output jumps.
+After EQ and saturation, Brown Help applies time-based automatic gain compensation to reduce perceived level drops without changing its behaviour with host block size. A final safety clip catches only samples beyond the output ceiling instead of turning down an entire block.
 
 ## Recommended Starting Point
 
 - Curve: `Brown`
-- Tilt: `25`
+- Tilt: `75` (`-4.5 dB/oct`)
 - Flip: off
-- Strength: `15%`
+- Strength: `35%`
 - Mix: `100%`
-- Correction: `3 dB`
+- Correction: `6 dB`
 - Speed: `45%`
 - Low: `70-100 Hz`
 - High: `16000-20000 Hz`
-- Oversampling: `1x`
+- Oversampling: `1x` (raise it when using more saturation drive)
 - High Pass: optional, around `70-90 Hz`
 - Saturation: optional, low Drive and Mix
 

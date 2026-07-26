@@ -1,6 +1,7 @@
 #include "BrownHelpEditor.h"
 #include "BrownHelpProcessor.h"
 
+#include <cmath>
 #include <juce_gui_extra/juce_gui_extra.h>
 
 namespace
@@ -27,6 +28,7 @@ public:
         outputFile = outputFileFromCommandLine(commandLine);
         processor = std::make_unique<BrownHelp::BrownHelpProcessor>();
         processor->prepareToPlay(48000.0, 512);
+        primeAnalysisPreview();
         editor = std::make_unique<BrownHelp::BrownHelpEditor>(*processor);
         editor->setBounds(0, 0, editor->getWidth(), editor->getHeight());
 
@@ -47,6 +49,30 @@ public:
     void anotherInstanceStarted(const juce::String&) override {}
 
 private:
+    void primeAnalysisPreview()
+    {
+        juce::AudioBuffer<float> preview(1, 512);
+        juce::MidiBuffer midi;
+        auto phase = 0.0;
+
+        for (int block = 0; block < 180; ++block)
+        {
+            auto* samples = preview.getWritePointer(0);
+
+            for (int sample = 0; sample < preview.getNumSamples(); ++sample)
+            {
+                samples[sample] = static_cast<float>(
+                    0.22 * std::sin(phase)
+                    + 0.12 * std::sin(phase * 2.0)
+                    + 0.06 * std::sin(phase * 4.0)
+                    + 0.035 * std::sin(phase * 19.0));
+                phase += 2.0 * juce::MathConstants<double>::pi * 125.0 / 48000.0;
+            }
+
+            processor->processBlock(preview, midi);
+        }
+    }
+
     void renderAndQuit()
     {
         const auto width = editor->getWidth();

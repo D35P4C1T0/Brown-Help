@@ -71,7 +71,7 @@ jobs:
         run: cmake --build build-release --config Release --target BrownHelp_VST3
 
       - name: Build tests
-        run: cmake --build build-release --config Release --target BrownHelpTests
+        run: cmake --build build-release --config Release --target BrownHelpTests BrownHelpProcessorTests
 
       - name: Run tests
         run: ctest --test-dir build-release --build-config Release --output-on-failure

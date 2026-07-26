@@ -43,10 +43,11 @@ Voxengo TEOTE is a dynamic spectral balancing EQ: it analyzes energy across freq
 
 ### Detector
 
-- Use 24 log-spaced bands between user low/high frequency bounds.
+- Use 24 log-spaced detector bands between user low/high frequency bounds.
 - Each band has a resonant band-pass detector.
 - Detector reads mono sum of input.
 - Track band RMS with attack/release smoothing.
+- Smooth neighbouring detector bands and gate low-confidence input.
 - Ignore bands outside selected frequency range.
 
 ### Target Curve
@@ -68,8 +69,8 @@ errorDb = targetShapeDb - measuredShapeDb
 correctionDb = clamp(errorDb * strength, -maxCorrectionDb, +maxCorrectionDb)
 ```
 
-- Default max correction: `12 dB`.
-- Apply with a bank of peaking EQ filters.
+- Default max correction: `6 dB`.
+- Apply with 12 well-spaced peaking EQ filters.
 - Smooth gain changes per block.
 - Q set from band spacing.
 
@@ -81,23 +82,23 @@ correctionDb = clamp(errorDb * strength, -maxCorrectionDb, +maxCorrectionDb)
 ### Oversampling
 
 - Expose `1x`, `2x`, `4x`.
-- v1 keeps this parameter ready in UI and code path.
-- For this broadband EQ algorithm, oversampling has limited value; it is mostly useful if later saturation or sharper nonlinear processing is added.
+- Oversampling wraps the nonlinear high-saturation stage only; the adaptive EQ remains at host rate.
+- Report oversampling latency to the host and keep the internal bypass aligned.
 
 ## Parameters
 
 | Parameter | Range | Default | Notes |
 | --- | --- | --- | --- |
 | Curve | Brown, Dark Brown, Gentle Brown | Brown | Preset target families |
-| Tilt | `0` to `100` | `25` | Generic tilt amount; maps to `0` to `-6 dB/oct` |
+| Tilt | `0` to `100` | `75` | Generic amount; Brown default maps to `-4.5 dB/oct` |
 | Flip Tilt | off/on | off | Mirrors tilt to positive slope |
-| Strength | `0` to `100%` | `50%` | Correction depth |
+| Strength | `0` to `100%` | `35%` | Correction depth |
 | Mix | `0` to `100%` | `100%` | Wet/dry |
 | Low Frequency | `20` to `1000 Hz` | `20 Hz` | Lower correction bound |
 | High Frequency | `1000` to `20000 Hz` | `20000 Hz` | Upper correction bound |
-| Max Correction | `1` to `18 dB` | `12 dB` | Safety clamp |
+| Max Correction | `1` to `18 dB` | `6 dB` | Safety clamp |
 | Speed | `0` to `100%` | `45%` | Detector/correction response |
-| Oversampling | `1x`, `2x`, `4x` | `1x` | Prepared for future heavier DSP |
+| Oversampling | `1x`, `2x`, `4x` | `1x` | Nonlinear saturation stage |
 | Bypass | off/on | off | Host-compatible bypass |
 
 ## Milestones
@@ -121,7 +122,7 @@ correctionDb = clamp(errorDb * strength, -maxCorrectionDb, +maxCorrectionDb)
 3. Set Prism to average/slow mode.
 4. Start with:
    - Curve: Brown
-   - Tilt: `-4.5`
+   - Tilt: `75` (`-4.5 dB/oct` on Brown)
    - Strength: `50%`
    - Mix: `100%`
    - Range: `20 Hz` to `20 kHz`

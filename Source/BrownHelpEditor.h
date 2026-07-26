@@ -2,6 +2,7 @@
 
 #include "BrownHelpProcessor.h"
 #include "BrownHelpUiComponents.h"
+#include "UiStyle.h"
 
 #include <array>
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -13,7 +14,7 @@ class BrownHelpEditor final : public juce::AudioProcessorEditor,
 {
 public:
     explicit BrownHelpEditor(BrownHelpProcessor& processor);
-    ~BrownHelpEditor() override = default;
+    ~BrownHelpEditor() override;
 
     void paint(juce::Graphics& graphics) override;
     void resized() override;
@@ -28,12 +29,13 @@ private:
     void layoutHorizontalSlider(juce::Slider& slider, juce::Label& label, juce::Rectangle<int> bounds);
     void layoutInlineSlider(juce::Slider& slider, juce::Label& label, juce::Rectangle<int> bounds);
     void layoutCombo(juce::ComboBox& comboBox, juce::Label& label, juce::Rectangle<int> bounds);
-    void drawPanel(juce::Graphics& graphics, juce::Rectangle<int> bounds, const juce::String& title);
+    void drawSectionTitle(juce::Graphics& graphics, juce::Rectangle<int> bounds, const juce::String& title);
     void configureHorizontalSlider(juce::Slider& slider);
     void configureSmallRotary(juce::Slider& slider);
     void updateSectionState();
     void timerCallback() override;
 
+    Ui::BrownHelpLookAndFeel lookAndFeel;
     BrownHelpProcessor& audioProcessor;
     TiltPreview tiltPreview;
     bool showHelpPanel = false;

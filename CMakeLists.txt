@@ -60,6 +60,16 @@ target_link_libraries(BrownHelp
         juce::juce_recommended_warning_flags
 )
 
+if(APPLE)
+    # JUCE's VST3 manifest helper updates moduleinfo.json after the initial ad-hoc
+    # signature. Sign once more at the very end so the produced bundle verifies.
+    add_custom_command(TARGET BrownHelp_VST3 POST_BUILD
+        COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:BrownHelp_VST3>"
+        COMMENT "Re-signing Brown Help after VST3 manifest generation"
+        VERBATIM
+    )
+endif()
+
 option(BROWN_HELP_BUILD_TESTS "Build Brown Help tests" ON)
 option(BROWN_HELP_BUILD_SCREENSHOT_TOOL "Build the Brown Help UI screenshot helper" OFF)
 
@@ -88,6 +98,19 @@ if(BROWN_HELP_BUILD_TESTS)
     )
 
     add_test(NAME BrownHelpTests COMMAND BrownHelpTests)
+
+    add_executable(BrownHelpProcessorTests
+        Tests/BrownHelpProcessorTests.cpp
+    )
+
+    target_include_directories(BrownHelpProcessorTests
+        PRIVATE
+            Source
+            ${juce_SOURCE_DIR}/modules
+    )
+    target_link_libraries(BrownHelpProcessorTests PRIVATE BrownHelp)
+
+    add_test(NAME BrownHelpProcessorTests COMMAND BrownHelpProcessorTests)
 endif()
 
 if(BROWN_HELP_BUILD_SCREENSHOT_TOOL)

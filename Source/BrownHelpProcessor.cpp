@@ -14,11 +14,11 @@ T parameterValue(const juce::AudioProcessorValueTreeState& parameters, const cha
 
 float gentleSaturate(float sample, float drive)
 {
-    // Tiny bias adds subtle even harmonics; tanh keeps podcast saturation soft.
-    const auto bias = 0.02f;
-    const auto normaliser = std::tanh(drive + bias);
-    const auto shaped = std::tanh(sample * drive + bias) - std::tanh(bias);
-    return shaped / std::max(0.1f, normaliser);
+    if (drive <= 1.0001f)
+        return sample;
+
+    // Unity small-signal gain avoids turning Drive into an accidental high shelf.
+    return std::tanh(sample * drive) / drive;
 }
 }
 
@@ -34,20 +34,29 @@ void BrownHelpProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
     hostSampleRate = sampleRate;
     dspSampleRate = sampleRate;
-    currentBlockSize = samplesPerBlock;
     currentOversamplingChoice = -1;
     previousHighPassFrequency = -1.0f;
     previousHighPassSlope = -1;
-    previousSaturationFrequency = -1.0f;
     smoothedAutoGainDb = 0.0f;
-    prepareHighPass(sampleRate, getTotalNumOutputChannels());
-    prepareSaturation(sampleRate, getTotalNumOutputChannels());
+    const auto channels = std::max(1, getTotalNumOutputChannels());
+    balancer.prepare(sampleRate, samplesPerBlock, channels);
+    prepareHighPass(sampleRate, channels);
+    prepareSaturationPaths(sampleRate, samplesPerBlock, channels);
     updateOversampling(parameterValue<int>(parameters, oversamplingId));
 }
 
 void BrownHelpProcessor::releaseResources()
 {
     balancer.reset();
+
+    for (auto& path : saturationPaths)
+    {
+        if (path.oversampling != nullptr)
+            path.oversampling->reset();
+
+        for (auto& filter : path.highPass)
+            filter.reset();
+    }
 }
 
 bool BrownHelpProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
@@ -68,41 +77,21 @@ void BrownHelpProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mi
     for (auto channel = getTotalNumInputChannels(); channel < getTotalNumOutputChannels(); ++channel)
         buffer.clear(channel, 0, buffer.getNumSamples());
 
-    if (parameterValue<float>(parameters, bypassId) > 0.5f)
-        return;
-
-    const auto inputRms = calculateRms(buffer);
     const auto oversamplingChoice = parameterValue<int>(parameters, oversamplingId);
     updateOversampling(oversamplingChoice);
 
-    if (oversamplingChoice == 0 || oversampling == nullptr)
+    if (parameterValue<float>(parameters, bypassId) > 0.5f)
     {
-        processHighPass(buffer);
-        balancer.process(buffer, readSettings());
-        processSaturation(buffer);
-        applyAutoGainCompensation(buffer, inputRms);
-        applyOutputGuard(buffer);
+        // Preserve the declared oversampling latency so the plugin's own bypass
+        // stays sample-aligned with the active path.
+        processSaturation(buffer, false);
         return;
     }
 
-    juce::dsp::AudioBlock<float> block(buffer);
-    auto oversampledBlock = oversampling->processSamplesUp(block);
-
-    oversampledChannelPointers.clear();
-    oversampledChannelPointers.reserve(oversampledBlock.getNumChannels());
-
-    for (size_t channel = 0; channel < oversampledBlock.getNumChannels(); ++channel)
-        oversampledChannelPointers.push_back(oversampledBlock.getChannelPointer(channel));
-
-    juce::AudioBuffer<float> oversampledBuffer(
-        oversampledChannelPointers.data(),
-        static_cast<int>(oversampledBlock.getNumChannels()),
-        static_cast<int>(oversampledBlock.getNumSamples()));
-
-    processHighPass(oversampledBuffer);
-    balancer.process(oversampledBuffer, readSettings());
-    processSaturation(oversampledBuffer);
-    oversampling->processSamplesDown(block);
+    const auto inputRms = calculateRms(buffer);
+    processHighPass(buffer);
+    balancer.process(buffer, readSettings());
+    processSaturation(buffer, parameterValue<float>(parameters, saturationEnabledId) >= 0.5f);
     applyAutoGainCompensation(buffer, inputRms);
     applyOutputGuard(buffer);
 }
@@ -168,7 +157,7 @@ void BrownHelpProcessor::changeProgramName(int, const juce::String&)
 void BrownHelpProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
     juce::MemoryOutputStream stream(destData, false);
-    parameters.state.writeToStream(stream);
+    parameters.copyState().writeToStream(stream);
 }
 
 void BrownHelpProcessor::setStateInformation(const void* data, int sizeInBytes)
@@ -180,6 +169,11 @@ void BrownHelpProcessor::setStateInformation(const void* data, int sizeInBytes)
 juce::AudioProcessorValueTreeState& BrownHelpProcessor::getParameters()
 {
     return parameters;
+}
+
+BrownCurveBalancer::AnalysisSnapshot BrownHelpProcessor::getAnalysisSnapshot() const
+{
+    return balancer.getAnalysisSnapshot();
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout BrownHelpProcessor::createParameterLayout()
@@ -196,7 +190,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BrownHelpProcessor::createPa
         tiltId,
         "Tilt",
         juce::NormalisableRange<float>(0.0f, 100.0f, 1.0f),
-        25.0f,
+        75.0f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
     layout.push_back(std::make_unique<juce::AudioParameterBool>(
@@ -208,7 +202,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BrownHelpProcessor::createPa
         strengthId,
         "Strength",
         juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f),
-        0.15f,
+        0.35f,
         juce::AudioParameterFloatAttributes().withLabel("%")));
 
     layout.push_back(std::make_unique<juce::AudioParameterFloat>(
@@ -236,7 +230,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BrownHelpProcessor::createPa
         maxCorrectionId,
         "Max Correction",
         juce::NormalisableRange<float>(1.0f, 18.0f, 0.1f),
-        3.0f,
+        6.0f,
         juce::AudioParameterFloatAttributes().withLabel("dB")));
 
     layout.push_back(std::make_unique<juce::AudioParameterFloat>(
@@ -306,7 +300,6 @@ BrownCurveBalancer::Settings BrownHelpProcessor::readSettings() const
     BrownCurveBalancer::Settings settings;
 
     const auto curveChoice = parameterValue<int>(parameters, curveId);
-    settings.curve = static_cast<BrownCurveBalancer::Curve>(curveChoice);
     settings.tiltDbPerOctave = tiltControlToDbPerOctave(
         parameterValue<float>(parameters, tiltId),
         curveChoice,
@@ -323,29 +316,25 @@ BrownCurveBalancer::Settings BrownHelpProcessor::readSettings() const
 
 void BrownHelpProcessor::updateOversampling(int oversamplingChoice)
 {
-    if (oversamplingChoice == currentOversamplingChoice)
+    const auto choice = std::clamp(oversamplingChoice, 0, 2);
+
+    if (choice == currentOversamplingChoice)
         return;
 
-    currentOversamplingChoice = oversamplingChoice;
-    const auto channels = static_cast<size_t>(std::max(1, getTotalNumOutputChannels()));
-    const auto factorPower = static_cast<size_t>(std::clamp(oversamplingChoice, 0, 2));
+    currentOversamplingChoice = choice;
+    auto& path = saturationPaths[static_cast<size_t>(choice)];
 
-    oversampling = std::make_unique<juce::dsp::Oversampling<float>>(
-        channels,
-        factorPower,
-        juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR,
-        true,
-        true);
+    if (path.oversampling != nullptr)
+        path.oversampling->reset();
 
-    oversampling->initProcessing(static_cast<size_t>(std::max(1, currentBlockSize)));
-    oversampling->reset();
+    for (auto& filter : path.highPass)
+        filter.reset();
 
-    // Keep hostSampleRate immutable; derived DSP rate changes with oversampling.
-    const auto oversampledRate = hostSampleRate * static_cast<double>(oversampling->getOversamplingFactor());
-    const auto oversampledBlockSize = currentBlockSize * static_cast<int>(oversampling->getOversamplingFactor());
-    balancer.prepare(oversampledRate, oversampledBlockSize, static_cast<int>(channels));
-    prepareHighPass(oversampledRate, static_cast<int>(channels));
-    prepareSaturation(oversampledRate, static_cast<int>(channels));
+    path.previousFrequency = -1.0f;
+    const auto latency = path.oversampling != nullptr
+                             ? static_cast<int>(std::round(path.oversampling->getLatencyInSamples()))
+                             : 0;
+    setLatencySamples(latency);
 }
 
 void BrownHelpProcessor::prepareHighPass(double sampleRate, int channels)
@@ -379,13 +368,14 @@ void BrownHelpProcessor::updateHighPass()
     previousHighPassFrequency = frequency;
     previousHighPassSlope = slope;
 
-    auto coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(dspSampleRate, frequency, 0.70710678f);
+    const auto coefficients =
+        juce::dsp::IIR::ArrayCoefficients<float>::makeHighPass(dspSampleRate, frequency, 0.70710678f);
 
     for (auto& filter : highPassStageOne)
-        *filter.coefficients = *coefficients;
+        *filter.coefficients = coefficients;
 
     for (auto& filter : highPassStageTwo)
-        *filter.coefficients = *coefficients;
+        *filter.coefficients = coefficients;
 }
 
 void BrownHelpProcessor::processHighPass(juce::AudioBuffer<float>& buffer)
@@ -398,11 +388,6 @@ void BrownHelpProcessor::processHighPass(juce::AudioBuffer<float>& buffer)
     const auto channels = std::min(buffer.getNumChannels(), static_cast<int>(highPassStageOne.size()));
     const auto samples = buffer.getNumSamples();
     const auto useSecondStage = parameterValue<int>(parameters, highPassSlopeId) == 1;
-    const auto cutoff = parameterValue<float>(parameters, highPassFrequencyId);
-    const auto cutoffScale = std::clamp((cutoff - 20.0f) / 380.0f, 0.0f, 1.0f);
-    const auto makeupDb = useSecondStage ? juce::jmap(cutoffScale, 0.4f, 1.4f)
-                                         : juce::jmap(cutoffScale, 0.25f, 0.9f);
-    const auto makeupGain = juce::Decibels::decibelsToGain(makeupDb);
 
     for (int channel = 0; channel < channels; ++channel)
     {
@@ -417,58 +402,108 @@ void BrownHelpProcessor::processHighPass(juce::AudioBuffer<float>& buffer)
             if (useSecondStage)
                 value = stageTwo.processSample(value);
 
-            data[sample] = value * makeupGain;
+            data[sample] = value;
         }
     }
 }
 
-void BrownHelpProcessor::prepareSaturation(double sampleRate, int channels)
+void BrownHelpProcessor::prepareSaturationPaths(double sampleRate, int maximumBlockSize, int channels)
 {
-    dspSampleRate = sampleRate;
     const auto safeChannels = std::max(1, channels);
-    saturationHighPass.resize(static_cast<size_t>(safeChannels));
+    oversampledChannelPointers.clear();
+    oversampledChannelPointers.reserve(static_cast<size_t>(safeChannels));
 
-    for (auto& filter : saturationHighPass)
-        filter.reset();
+    for (int choice = 0; choice < static_cast<int>(saturationPaths.size()); ++choice)
+    {
+        auto& path = saturationPaths[static_cast<size_t>(choice)];
+        const auto factor = 1 << choice;
+        path.sampleRate = sampleRate * static_cast<double>(factor);
+        path.previousFrequency = -1.0f;
+        path.highPass.resize(static_cast<size_t>(safeChannels));
 
-    previousSaturationFrequency = -1.0f;
-    updateSaturation();
+        for (auto& filter : path.highPass)
+            filter.reset();
+
+        if (choice == 0)
+        {
+            path.oversampling.reset();
+            continue;
+        }
+
+        path.oversampling = std::make_unique<juce::dsp::Oversampling<float>>(
+            static_cast<size_t>(safeChannels),
+            static_cast<size_t>(choice),
+            juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR,
+            true,
+            true);
+        path.oversampling->initProcessing(static_cast<size_t>(std::max(1, maximumBlockSize)));
+        path.oversampling->reset();
+    }
 }
 
-void BrownHelpProcessor::updateSaturation()
+void BrownHelpProcessor::updateSaturation(SaturationPath& path)
 {
     const auto frequency = std::clamp(parameterValue<float>(parameters, saturationFrequencyId),
                                       1500.0f,
-                                      static_cast<float>(dspSampleRate * 0.45));
+                                      static_cast<float>(path.sampleRate * 0.45));
 
-    if (std::abs(frequency - previousSaturationFrequency) < 0.01f)
+    if (std::abs(frequency - path.previousFrequency) < 0.01f)
         return;
 
-    previousSaturationFrequency = frequency;
+    path.previousFrequency = frequency;
 
-    auto coefficients = juce::dsp::IIR::Coefficients<float>::makeHighPass(dspSampleRate, frequency, 0.70710678f);
+    const auto coefficients =
+        juce::dsp::IIR::ArrayCoefficients<float>::makeHighPass(path.sampleRate, frequency, 0.70710678f);
 
-    for (auto& filter : saturationHighPass)
-        *filter.coefficients = *coefficients;
+    for (auto& filter : path.highPass)
+        *filter.coefficients = coefficients;
 }
 
-void BrownHelpProcessor::processSaturation(juce::AudioBuffer<float>& buffer)
+void BrownHelpProcessor::processSaturation(juce::AudioBuffer<float>& buffer, bool enabled)
 {
-    if (parameterValue<float>(parameters, saturationEnabledId) < 0.5f)
+    auto& path = saturationPaths[static_cast<size_t>(std::clamp(currentOversamplingChoice, 0, 2))];
+
+    if (path.oversampling == nullptr)
+    {
+        if (enabled)
+            processSaturationSamples(buffer, path);
+
         return;
+    }
 
-    updateSaturation();
+    juce::dsp::AudioBlock<float> block(buffer);
+    auto oversampledBlock = path.oversampling->processSamplesUp(block);
 
-    const auto channels = std::min(buffer.getNumChannels(), static_cast<int>(saturationHighPass.size()));
+    oversampledChannelPointers.clear();
+
+    for (size_t channel = 0; channel < oversampledBlock.getNumChannels(); ++channel)
+        oversampledChannelPointers.push_back(oversampledBlock.getChannelPointer(channel));
+
+    juce::AudioBuffer<float> oversampledBuffer(
+        oversampledChannelPointers.data(),
+        static_cast<int>(oversampledBlock.getNumChannels()),
+        static_cast<int>(oversampledBlock.getNumSamples()));
+
+    if (enabled)
+        processSaturationSamples(oversampledBuffer, path);
+
+    path.oversampling->processSamplesDown(block);
+}
+
+void BrownHelpProcessor::processSaturationSamples(juce::AudioBuffer<float>& buffer, SaturationPath& path)
+{
+    updateSaturation(path);
+
+    const auto channels = std::min(buffer.getNumChannels(), static_cast<int>(path.highPass.size()));
     const auto samples = buffer.getNumSamples();
     const auto driveAmount = parameterValue<float>(parameters, saturationDriveId);
-    const auto drive = juce::jmap(std::clamp(driveAmount, 0.0f, 1.0f), 1.01f, 2.1f);
-    const auto mix = std::clamp(parameterValue<float>(parameters, saturationMixId), 0.0f, 1.0f) * 0.65f;
+    const auto drive = juce::jmap(std::clamp(driveAmount, 0.0f, 1.0f), 1.0f, 6.0f);
+    const auto mix = std::clamp(parameterValue<float>(parameters, saturationMixId), 0.0f, 1.0f);
 
     for (int channel = 0; channel < channels; ++channel)
     {
         auto* data = buffer.getWritePointer(channel);
-        auto& highPass = saturationHighPass[static_cast<size_t>(channel)];
+        auto& highPass = path.highPass[static_cast<size_t>(channel)];
 
         for (int sample = 0; sample < samples; ++sample)
         {
@@ -508,33 +543,33 @@ void BrownHelpProcessor::applyAutoGainCompensation(juce::AudioBuffer<float>& buf
     constexpr auto minimumRms = 0.001f;
 
     const auto outputRms = calculateRms(buffer);
+    const auto previousGain = juce::Decibels::decibelsToGain(smoothedAutoGainDb);
+    auto desiredDb = 0.0f;
 
-    if (inputRms < minimumRms || outputRms < minimumRms)
-        return;
+    if (inputRms >= minimumRms && outputRms >= minimumRms)
+    {
+        const auto inputDb = juce::Decibels::gainToDecibels(inputRms);
+        const auto outputDb = juce::Decibels::gainToDecibels(outputRms);
+        desiredDb = std::clamp((inputDb - outputDb) * 0.75f, -3.0f, 4.0f);
+    }
 
-    const auto inputDb = juce::Decibels::gainToDecibels(inputRms);
-    const auto outputDb = juce::Decibels::gainToDecibels(outputRms);
-    const auto desiredDb = std::clamp((inputDb - outputDb) * 0.85f, -3.0f, 8.0f);
-    const auto smoothing = 0.92f;
+    const auto smoothing = std::exp(-static_cast<float>(buffer.getNumSamples())
+                                    / static_cast<float>(0.45 * hostSampleRate));
     smoothedAutoGainDb = smoothing * smoothedAutoGainDb + (1.0f - smoothing) * desiredDb;
-    buffer.applyGain(juce::Decibels::decibelsToGain(smoothedAutoGainDb));
+    const auto nextGain = juce::Decibels::decibelsToGain(smoothedAutoGainDb);
+    buffer.applyGainRamp(0, buffer.getNumSamples(), previousGain, nextGain);
 }
 
 void BrownHelpProcessor::applyOutputGuard(juce::AudioBuffer<float>& buffer) const
 {
     constexpr auto ceiling = 0.98f;
-    auto peak = 0.0f;
-
     for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
     {
-        const auto* data = buffer.getReadPointer(channel);
+        auto* data = buffer.getWritePointer(channel);
 
         for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-            peak = std::max(peak, std::abs(data[sample]));
+            data[sample] = std::clamp(data[sample], -ceiling, ceiling);
     }
-
-    if (peak > ceiling)
-        buffer.applyGain(ceiling / peak);
 }
 }
 
