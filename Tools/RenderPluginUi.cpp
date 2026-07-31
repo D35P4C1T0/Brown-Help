@@ -65,7 +65,8 @@ private:
                     0.22 * std::sin(phase)
                     + 0.12 * std::sin(phase * 2.0)
                     + 0.06 * std::sin(phase * 4.0)
-                    + 0.035 * std::sin(phase * 19.0));
+                    + 0.035 * std::sin(phase * 19.0)
+                    + 0.055 * std::sin(phase * 48.0));
                 phase += 2.0 * juce::MathConstants<double>::pi * 125.0 / 48000.0;
             }
 

@@ -1,184 +1,153 @@
 #include "BrownHelpUiComponents.h"
 
-#include "Parameters.h"
 #include "UiStyle.h"
 
-#include <array>
 #include <cmath>
 
 namespace BrownHelp
 {
-TiltPreview::TiltPreview(BrownHelpProcessor& processorToUse)
+namespace
+{
+juce::String frequencyText(float frequency)
+{
+    if (frequency <= 0.0f)
+        return "--";
+    if (frequency >= 1000.0f)
+        return juce::String(frequency / 1000.0f, 2) + " kHz";
+    return juce::String(frequency, 0) + " Hz";
+}
+
+juce::String levelText(float level, const juce::String& suffix)
+{
+    return level <= -99.0f ? "--" : juce::String(level, 1) + suffix;
+}
+}
+
+SpectrumAnalyzer::SpectrumAnalyzer(BrownHelpProcessor& processorToUse)
     : processor(processorToUse)
 {
-    startTimerHz(15);
+    startTimerHz(20);
 }
 
-void TiltPreview::paint(juce::Graphics& graphics)
+void SpectrumAnalyzer::paint(juce::Graphics& graphics)
 {
+    using namespace Ui;
+    const auto snapshot = processor.getAnalysisSnapshot();
     auto bounds = getLocalBounds().toFloat();
-    graphics.setColour(juce::Colour(Ui::plotColour));
+
+    graphics.setColour(juce::Colour(plotColour));
     graphics.fillRoundedRectangle(bounds, 2.0f);
-    graphics.setColour(juce::Colour(Ui::outlineColour));
+    graphics.setColour(juce::Colour(outlineColour));
     graphics.drawRoundedRectangle(bounds.reduced(0.5f), 2.0f, 1.0f);
 
-    auto plot = getLocalBounds().reduced(12, 7);
-    plot.removeFromTop(20);
-
-    auto& parameters = processor.getParameters();
-    const auto tilt = parameters.getRawParameterValue(tiltId)->load();
-    const auto curve = static_cast<int>(parameters.getRawParameterValue(curveId)->load());
-    const auto mix = std::clamp(parameters.getRawParameterValue(mixId)->load(), 0.0f, 1.0f);
-    const auto flip = parameters.getRawParameterValue(tiltFlipId)->load() >= 0.5f;
-    const auto slope = tiltControlToDbPerOctave(tilt, curve, flip);
-    const auto lowFrequency = parameters.getRawParameterValue(lowFrequencyId)->load();
-    const auto highFrequency = parameters.getRawParameterValue(highFrequencyId)->load();
-    const auto centreY = static_cast<float>(plot.getCentreY());
-    const auto scale = static_cast<float>(plot.getHeight()) / 70.0f;
-
-    const auto graphLowLog = std::log(20.0f);
-    const auto graphHighLog = std::log(20000.0f);
-    const std::array<float, 5> frequencyMarks { 20.0f, 100.0f, 1000.0f, 10000.0f, 20000.0f };
-
-    graphics.setFont(juce::FontOptions(10.0f));
-
-    const auto frequencyToX = [&plot, graphLowLog, graphHighLog](float frequency)
-    {
-        const auto ratio = (std::log(std::clamp(frequency, 20.0f, 20000.0f)) - graphLowLog)
-                           / (graphHighLog - graphLowLog);
-        return static_cast<float>(plot.getX()) + ratio * static_cast<float>(plot.getWidth());
+    auto header = getLocalBounds().reduced(14, 8).removeFromTop(42);
+    const auto metricWidth = std::max(120, header.getWidth() / 5);
+    const std::array<juce::String, 5> titles { "LOUDNESS", "NORMALIZER", "FUNDAMENTAL", "SIBILANCE", "LIMITER" };
+    const std::array<juce::String, 5> values {
+        levelText(snapshot.loudnessLufs, " LUFS"),
+        levelText(snapshot.normalizerGainDb, " dB"),
+        frequencyText(snapshot.fundamentalHz) + "  " + levelText(snapshot.fundamentalRmsDb, " dB RMS"),
+        frequencyText(snapshot.sibilanceHz) + "  " + levelText(snapshot.sibilanceRmsDb, " dB RMS"),
+        levelText(snapshot.limiterReductionDb, " dB")
     };
 
-    const auto rangeLeft = frequencyToX(std::min(lowFrequency, highFrequency));
-    const auto rangeRight = frequencyToX(std::max(lowFrequency, highFrequency));
-    graphics.setColour(juce::Colour(Ui::accentColour).withAlpha(0.045f));
-    graphics.fillRect(juce::Rectangle<float>(
-        rangeLeft,
-        static_cast<float>(plot.getY()),
-        std::max(1.0f, rangeRight - rangeLeft),
-        static_cast<float>(plot.getHeight())));
+    for (int index = 0; index < 5; ++index)
+    {
+        auto cell = header.removeFromLeft(index == 4 ? header.getWidth() : metricWidth);
+        graphics.setColour(juce::Colour(mutedTextColour));
+        graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+        graphics.drawText(titles[static_cast<size_t>(index)], cell.removeFromTop(14), juce::Justification::centredLeft);
+        graphics.setColour(index == 2 ? juce::Colour(accentColour)
+                                     : index == 3 ? juce::Colour(correctionColour)
+                                                  : juce::Colour(textColour));
+        graphics.setFont(juce::FontOptions(11.0f));
+        graphics.drawFittedText(values[static_cast<size_t>(index)], cell, juce::Justification::centredLeft, 1);
+    }
 
-    for (const auto frequency : frequencyMarks)
+    auto plot = getLocalBounds().reduced(14, 8);
+    plot.removeFromTop(49);
+    plot.removeFromLeft(35);
+    plot.removeFromBottom(18);
+    const auto lowLog = std::log(30.0f);
+    const auto highLog = std::log(20000.0f);
+
+    const auto frequencyToX = [&plot, lowLog, highLog](float frequency)
+    {
+        const auto ratio = (std::log(std::clamp(frequency, 30.0f, 20000.0f)) - lowLog) / (highLog - lowLog);
+        return static_cast<float>(plot.getX()) + ratio * static_cast<float>(plot.getWidth());
+    };
+    const auto dbToY = [&plot](float db)
+    {
+        const auto ratio = std::clamp((db + 80.0f) / 80.0f, 0.0f, 1.0f);
+        return static_cast<float>(plot.getBottom()) - ratio * static_cast<float>(plot.getHeight());
+    };
+
+    for (const auto db : { -80, -60, -40, -20, 0 })
+    {
+        const auto y = dbToY(static_cast<float>(db));
+        graphics.setColour(juce::Colour(outlineColour).withAlpha(db == -40 ? 0.9f : 0.48f));
+        graphics.drawHorizontalLine(static_cast<int>(std::round(y)), static_cast<float>(plot.getX()), static_cast<float>(plot.getRight()));
+        graphics.setColour(db == -40 ? juce::Colour(accentColour) : juce::Colour(mutedTextColour));
+        graphics.setFont(juce::FontOptions(9.0f));
+        graphics.drawText(juce::String(db), 2, static_cast<int>(y) - 7, 31, 14, juce::Justification::centredRight);
+    }
+
+    for (const auto frequency : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f, 20000.0f })
     {
         const auto x = frequencyToX(frequency);
-
-        graphics.setColour(juce::Colour(Ui::outlineColour).withAlpha(0.65f));
+        graphics.setColour(juce::Colour(outlineColour).withAlpha(0.42f));
         graphics.drawVerticalLine(static_cast<int>(std::round(x)), static_cast<float>(plot.getY()), static_cast<float>(plot.getBottom()));
-        graphics.setColour(juce::Colour(Ui::mutedTextColour).withAlpha(0.8f));
-        const auto label = frequency >= 1000.0f ? juce::String(frequency / 1000.0f, frequency >= 10000.0f ? 0 : 1) + "k"
-                                                : juce::String(static_cast<int>(frequency));
-        graphics.drawText(label, static_cast<int>(x - 18.0f), plot.getBottom() - 14, 36, 12, juce::Justification::centred);
+        graphics.setColour(juce::Colour(mutedTextColour));
+        graphics.setFont(juce::FontOptions(9.0f));
+        const auto label = frequency >= 1000.0f ? juce::String(frequency / 1000.0f, 0) + "k"
+                                                : juce::String(frequency, 0);
+        graphics.drawText(label, static_cast<int>(x) - 18, plot.getBottom() + 2, 36, 14, juce::Justification::centred);
     }
 
-    if (parameters.getRawParameterValue(highPassEnabledId)->load() >= 0.5f)
+    if (snapshot.frequenciesHz.front() > 0.0f)
     {
-        const auto cutoff = parameters.getRawParameterValue(highPassFrequencyId)->load();
-        const auto slopeChoice = static_cast<int>(parameters.getRawParameterValue(highPassSlopeId)->load());
-        const auto slopePerOctave = slopeChoice == 1 ? 24.0f : 12.0f;
-        juce::Path highPassPath;
-
-        for (int point = 0; point < 96; ++point)
+        juce::Path spectrum;
+        for (size_t index = 0; index < snapshot.frequenciesHz.size(); ++index)
         {
-            const auto ratio = static_cast<float>(point) / 95.0f;
-            const auto frequency = 20.0f * std::pow(1000.0f, ratio);
-            const auto attenuationDb = frequency < cutoff ? -slopePerOctave * std::log2(cutoff / std::max(1.0f, frequency)) : 0.0f;
-            const auto x = static_cast<float>(plot.getX()) + ratio * static_cast<float>(plot.getWidth());
-            const auto y = std::clamp(centreY - attenuationDb * scale,
-                                      static_cast<float>(plot.getY()),
-                                      static_cast<float>(plot.getBottom()));
-
-            if (point == 0)
-                highPassPath.startNewSubPath(x, y);
-            else
-                highPassPath.lineTo(x, y);
-        }
-
-        graphics.setColour(juce::Colour(Ui::mutedTextColour).withAlpha(0.75f));
-        graphics.strokePath(highPassPath, juce::PathStrokeType(1.4f));
-    }
-
-    juce::Path path;
-
-    for (int point = 0; point < 64; ++point)
-    {
-        const auto ratio = static_cast<float>(point) / 63.0f;
-        const auto frequency = 20.0f * std::pow(1000.0f, ratio);
-        const auto targetDb = slope * std::log2(frequency / 1000.0f);
-        const auto x = static_cast<float>(plot.getX()) + ratio * static_cast<float>(plot.getWidth());
-        const auto y = std::clamp(
-            centreY - targetDb * scale,
-            static_cast<float>(plot.getY()),
-            static_cast<float>(plot.getBottom()));
-
-        if (point == 0)
-            path.startNewSubPath(x, y);
-        else
-            path.lineTo(x, y);
-    }
-
-    graphics.setColour(juce::Colour(Ui::outlineColour));
-    graphics.drawHorizontalLine(plot.getCentreY(), static_cast<float>(plot.getX()), static_cast<float>(plot.getRight()));
-
-    graphics.setColour(juce::Colour(Ui::accentColour).withAlpha(0.35f + mix * 0.65f));
-    graphics.strokePath(path, juce::PathStrokeType(1.75f));
-
-    const auto analysis = processor.getAnalysisSnapshot();
-
-    if (analysis.frequenciesHz.front() > 0.0f)
-    {
-        juce::Path correctionPath;
-
-        for (size_t index = 0; index < analysis.frequenciesHz.size(); ++index)
-        {
-            const auto x = frequencyToX(analysis.frequenciesHz[index]);
-            const auto y = std::clamp(
-                centreY - analysis.correctionDb[index] * scale * 2.0f,
-                static_cast<float>(plot.getY()),
-                static_cast<float>(plot.getBottom()));
-
+            const auto x = frequencyToX(snapshot.frequenciesHz[index]);
+            const auto y = dbToY(snapshot.spectrumDb[index]);
             if (index == 0)
-                correctionPath.startNewSubPath(x, y);
+                spectrum.startNewSubPath(x, y);
             else
-                correctionPath.lineTo(x, y);
+                spectrum.lineTo(x, y);
         }
 
-        graphics.setColour(juce::Colour(Ui::correctionColour).withAlpha(analysis.signalPresent ? 0.9f : 0.35f));
-        graphics.strokePath(correctionPath, juce::PathStrokeType(1.4f));
+        graphics.setColour(juce::Colour(correctionColour).withAlpha(snapshot.signalPresent ? 0.95f : 0.35f));
+        graphics.strokePath(spectrum, juce::PathStrokeType(1.8f, juce::PathStrokeType::curved));
     }
 
-    graphics.setColour(juce::Colour(Ui::accentColour));
-    graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
-    graphics.drawText("TARGET", 12, 5, 48, 12, juce::Justification::centredLeft);
-    graphics.setColour(juce::Colour(Ui::correctionColour));
-    graphics.drawText("CORRECTION", 66, 5, 74, 12, juce::Justification::centredLeft);
+    const auto drawMarker = [&](float frequency, juce::Colour colour, const juce::String& label)
+    {
+        if (frequency <= 0.0f)
+            return;
+        const auto x = frequencyToX(frequency);
+        graphics.setColour(colour.withAlpha(0.9f));
+        graphics.drawVerticalLine(static_cast<int>(std::round(x)), static_cast<float>(plot.getY()), static_cast<float>(plot.getBottom()));
+        graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+        graphics.drawText(label, static_cast<int>(x) + 3, plot.getY() + 3, 90, 14, juce::Justification::centredLeft);
+    };
 
-    graphics.setColour(juce::Colour(Ui::mutedTextColour));
-    graphics.setFont(juce::FontOptions(9.0f));
-    graphics.drawText(juce::String(slope, 2) + " dB / oct", getWidth() / 2, 5, getWidth() / 2 - 12, 12, juce::Justification::centredRight);
+    drawMarker(snapshot.fundamentalHz, juce::Colour(accentColour),
+               "F0  " + juce::String(snapshot.fundamentalCorrectionDb, 1) + " dB");
+    drawMarker(snapshot.sibilanceHz, juce::Colour(correctionColour),
+               "S  " + juce::String(snapshot.sibilanceCorrectionDb, 1) + " dB");
+
+    graphics.setColour(juce::Colour(mutedTextColour));
+    graphics.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+    graphics.drawText("DISPLAY TILT  +4.5 dB/OCT", plot.getRight() - 180, plot.getY() + 3, 180, 14,
+                      juce::Justification::centredRight);
+    graphics.setColour(juce::Colour(accentColour));
+    graphics.drawText("-40 dB RMS CEILING", plot.getX() + 4, static_cast<int>(dbToY(-40.0f)) - 15, 130, 14,
+                      juce::Justification::centredLeft);
 }
 
-void TiltPreview::timerCallback()
+void SpectrumAnalyzer::timerCallback()
 {
     repaint();
-}
-
-void FrequencySlider::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
-{
-    juce::ignoreUnused(event);
-
-    const auto delta = std::abs(wheel.deltaY) > std::abs(wheel.deltaX) ? wheel.deltaY : -wheel.deltaX;
-
-    if (delta == 0.0f)
-        return;
-
-    wheelAccumulator += delta;
-
-    if (std::abs(wheelAccumulator) < 0.06f)
-        return;
-
-    const auto direction = wheelAccumulator > 0.0f ? 1.0 : -1.0;
-    wheelAccumulator = 0.0f;
-    const auto semitoneRatio = std::pow(2.0, direction / 12.0);
-    setValue(getValue() * semitoneRatio, juce::sendNotificationSync);
 }
 }

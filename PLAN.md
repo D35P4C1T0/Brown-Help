@@ -1,138 +1,34 @@
-# Brown Help VST3 Plan
+# Brown Help 0.2 DSP Plan
 
 ## Goal
 
-Build a mono-first VST3 plugin for podcast audio that dynamically nudges input tone toward a tilted brown-noise reference curve. Default target is `-4.5 dB/octave`, with adjustable range, strength, and wet/dry mix.
+Automate podcast voice preparation: streaming `-14 LUFS` normalization, fundamental/sibilance matching at or below `-40 dB RMS`, optional cut-only shelves, and final `0 dBFS` protection.
 
-Working name: **Brown Help**. Vendor: **D35P Audio**.
+## Implemented Flow
 
-## Product Names
+1. Stereo-linked K-weighted gated loudness meter
+2. Smooth normalization gain targeting `-14 LUFS`
+3. `4096`-sample analysis frames
+4. Fundamental detector over `65-350 Hz`
+5. Sibilance detector over `3.5-10 kHz`
+6. Highest-RMS learning for both bands
+7. Cut-only peak EQ to common level no higher than `-40 dB RMS`
+8. Optional low/high reduction shelves, `0-12 dB`
+9. Linked `5 ms` look-ahead limiter, `0 dBFS` sample ceiling
+10. Processed-output FFT with `+4.5 dB/oct` display tilt
 
-1. Brown Help
-2. Brownline
-3. WarmCurve
-4. Podcast Brown
-5. Tiltkeeper
-6. VoiceSlope
-7. ToneSettle
-8. Brown Anchor
-9. Curve Friend
-10. D35P Balancer
+## Validation
 
-## References And Intent
+- Silence remains finite
+- `125 Hz` synthetic voice fundamental is learned
+- `6 kHz` synthetic sibilance is learned
+- Normalizer converges to `-14 LUFS`
+- F0/S correction never boosts
+- Corrected learned peaks match and remain at or below `-40 dB RMS`
+- Limiter output never exceeds `0 dBFS`
+- VST state round-trips new shelf parameters
+- Processor reports `5 ms` limiter latency
 
-Voxengo TEOTE is a dynamic spectral balancing EQ: it analyzes energy across frequency bands and applies time-varying EQ to move the source toward a selected spectral profile. Brown Help v1 follows that broad idea, but with a smaller podcast-focused scope:
+## Known Real-Time Constraint
 
-- One target family: brown-like downward spectral tilt.
-- Default slope: `-4.5 dB/octave`.
-- Dynamic corrective EQ, not static EQ matching.
-- Conservative correction, smoothed heavily to avoid pumping.
-- Mono-first behavior for spoken-word content.
-
-## Technical Defaults
-
-- Framework: JUCE with CMake.
-- Plugin format: VST3.
-- Platforms: macOS, Windows, Linux.
-- Build strategy: CMake `FetchContent` downloads JUCE.
-- Channels: mono preferred, stereo accepted by summing detection and applying same correction to each channel. This keeps REAPER workflow easy while staying useful on stereo tracks.
-- UI: generic JUCE parameter editor for v1.
-- License note: JUCE is GPL/commercial. Fine for local GPL-compatible work; commercial closed-source distribution needs JUCE commercial terms or framework swap.
-
-## DSP Design
-
-### Detector
-
-- Use 24 log-spaced detector bands between user low/high frequency bounds.
-- Each band has a resonant band-pass detector.
-- Detector reads mono sum of input.
-- Track band RMS with attack/release smoothing.
-- Smooth neighbouring detector bands and gate low-confidence input.
-- Ignore bands outside selected frequency range.
-
-### Target Curve
-
-For each band center `f`:
-
-```text
-targetDb(f) = tiltDbPerOctave * log2(f / referenceFrequency)
-```
-
-Then align target and measured spectra by subtracting their weighted average difference. This means plugin corrects tone shape, not overall loudness.
-
-### Correction
-
-For each band:
-
-```text
-errorDb = targetShapeDb - measuredShapeDb
-correctionDb = clamp(errorDb * strength, -maxCorrectionDb, +maxCorrectionDb)
-```
-
-- Default max correction: `6 dB`.
-- Apply with 12 well-spaced peaking EQ filters.
-- Smooth gain changes per block.
-- Q set from band spacing.
-
-### Mix
-
-- Processed signal from corrective EQ bank.
-- Wet/dry mix parameter blends corrected signal with original.
-
-### Oversampling
-
-- Expose `1x`, `2x`, `4x`.
-- Oversampling wraps the nonlinear high-saturation stage only; the adaptive EQ remains at host rate.
-- Report oversampling latency to the host and keep the internal bypass aligned.
-
-## Parameters
-
-| Parameter | Range | Default | Notes |
-| --- | --- | --- | --- |
-| Curve | Brown, Dark Brown, Gentle Brown | Brown | Preset target families |
-| Tilt | `0` to `100` | `75` | Generic amount; Brown default maps to `-4.5 dB/oct` |
-| Flip Tilt | off/on | off | Mirrors tilt to positive slope |
-| Strength | `0` to `100%` | `35%` | Correction depth |
-| Mix | `0` to `100%` | `100%` | Wet/dry |
-| Low Frequency | `20` to `1000 Hz` | `20 Hz` | Lower correction bound |
-| High Frequency | `1000` to `20000 Hz` | `20000 Hz` | Upper correction bound |
-| Max Correction | `1` to `18 dB` | `6 dB` | Safety clamp |
-| Speed | `0` to `100%` | `45%` | Detector/correction response |
-| Oversampling | `1x`, `2x`, `4x` | `1x` | Nonlinear saturation stage |
-| Bypass | off/on | off | Host-compatible bypass |
-
-## Milestones
-
-1. Scaffold JUCE VST3 CMake project.
-2. Implement processor parameters and mono/stereo bus layout.
-3. Implement `BrownCurveBalancer` DSP class.
-4. Add tests for target curve math, range bounds, and correction direction.
-5. Build VST3 locally.
-6. Load in REAPER.
-7. Verify with TDR Prism:
-   - Pink-ish input should be darkened toward `-4.5 dB/oct`.
-   - Muddy/boomy speech should reduce low-mid excess.
-   - Thin speech should restore low/mid body without runaway boosts.
-8. Tune smoothing and clamp values from listening tests.
-
-## Manual REAPER Test
-
-1. Insert plugin before TDR Prism.
-2. Feed speech or noise through track.
-3. Set Prism to average/slow mode.
-4. Start with:
-   - Curve: Brown
-   - Tilt: `75` (`-4.5 dB/oct` on Brown)
-   - Strength: `50%`
-   - Mix: `100%`
-   - Range: `20 Hz` to `20 kHz`
-5. Raise Strength until spectral movement is obvious.
-6. Lower Mix if voice sounds over-processed.
-7. Try range `80 Hz` to `12 kHz` for voice-only correction.
-
-## Open Questions
-
-- Final plugin name.
-- Whether custom UI is worth building after DSP validation.
-- Whether mono-only bus should be enforced, or stereo compatibility should remain.
-- Whether commercial distribution is planned, because that affects JUCE licensing.
+Integrated loudness is causal and converges after playback starts. Exact first-sample whole-file normalization requires offline two-pass analysis and is outside a real-time VST insert.

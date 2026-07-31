@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(BrownHelp VERSION 0.1.0 LANGUAGES C CXX)
+project(BrownHelp VERSION 0.2.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -23,9 +23,9 @@ juce_add_plugin(BrownHelp
     BUNDLE_ID "audio.d35p.brownhelp"
     PLUGIN_MANUFACTURER_CODE D35P
     PLUGIN_CODE BrHp
-    FORMATS VST3
+    FORMATS AU VST3
     PRODUCT_NAME "Brown Help"
-    DESCRIPTION "Podcast spectral balancer toward a tilted brown-noise curve"
+    DESCRIPTION "Automatic podcast loudness and voice-band engineer"
     IS_SYNTH FALSE
     NEEDS_MIDI_INPUT FALSE
     NEEDS_MIDI_OUTPUT FALSE
@@ -37,7 +37,7 @@ juce_add_plugin(BrownHelp
 
 target_sources(BrownHelp
     PRIVATE
-        Source/BrownCurveBalancer.cpp
+        Source/VoiceEngineer.cpp
         Source/BrownHelpProcessor.cpp
         Source/BrownHelpEditor.cpp
         Source/BrownHelpUiComponents.cpp
@@ -68,6 +68,12 @@ if(APPLE)
         COMMENT "Re-signing Brown Help after VST3 manifest generation"
         VERBATIM
     )
+
+    add_custom_command(TARGET BrownHelp_AU POST_BUILD
+        COMMAND codesign --force --deep --sign - "$<TARGET_BUNDLE_DIR:BrownHelp_AU>"
+        COMMENT "Re-signing Brown Help Audio Unit"
+        VERBATIM
+    )
 endif()
 
 option(BROWN_HELP_BUILD_TESTS "Build Brown Help tests" ON)
@@ -77,8 +83,8 @@ if(BROWN_HELP_BUILD_TESTS)
     enable_testing()
 
     add_executable(BrownHelpTests
-        Tests/BrownCurveBalancerTests.cpp
-        Source/BrownCurveBalancer.cpp
+        Tests/VoiceEngineerTests.cpp
+        Source/VoiceEngineer.cpp
     )
 
     target_link_libraries(BrownHelpTests
@@ -116,7 +122,7 @@ endif()
 if(BROWN_HELP_BUILD_SCREENSHOT_TOOL)
     add_executable(BrownHelpUiScreenshot
         Tools/RenderPluginUi.cpp
-        Source/BrownCurveBalancer.cpp
+        Source/VoiceEngineer.cpp
         Source/BrownHelpProcessor.cpp
         Source/BrownHelpEditor.cpp
         Source/BrownHelpUiComponents.cpp

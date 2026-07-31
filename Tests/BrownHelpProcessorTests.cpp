@@ -1,7 +1,6 @@
 #include "BrownHelpProcessor.h"
 
 #include <cmath>
-#include <cstring>
 #include <iostream>
 
 namespace
@@ -24,59 +23,46 @@ int main()
     juce::ScopedJuceInitialiser_GUI juceInitialiser;
     BrownHelp::BrownHelpProcessor processor;
     processor.prepareToPlay(48000.0, 512);
+
+    if (processor.getLatencySamples() != 240)
+        return fail("processor did not report limiter latency");
+
     juce::MidiBuffer midi;
-    juce::AudioBuffer<float> buffer(1, 512);
-
-    buffer.clear();
-    buffer.applyGain(1.5f);
-
+    juce::AudioBuffer<float> buffer(2, 512);
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-        buffer.setSample(0, sample, sample % 2 == 0 ? 1.5f : -1.5f);
-
+        for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+            buffer.setSample(channel, sample, sample % 2 == 0 ? 2.0f : -2.0f);
     processor.processBlock(buffer, midi);
 
-    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-    {
-        const auto value = buffer.getSample(0, sample);
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+        {
+            const auto value = buffer.getSample(channel, sample);
+            if (! std::isfinite(value))
+                return fail("processor produced a non-finite sample");
+            if (std::abs(value) > 1.00001f)
+                return fail("processor exceeded 0 dBFS");
+        }
 
-        if (! std::isfinite(value))
-            return fail("processor produced a non-finite sample");
-
-        if (std::abs(value) > 0.981f)
-            return fail("output guard did not enforce its ceiling");
-    }
-
-    setParameter(processor, BrownHelp::bypassId, 1.0f);
-
-    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-        buffer.setSample(0, sample, 1.2f * std::sin(0.07f * static_cast<float>(sample)));
-
-    juce::AudioBuffer<float> bypassReference;
-    bypassReference.makeCopyOf(buffer);
-    processor.processBlock(buffer, midi);
-
-    if (std::memcmp(buffer.getReadPointer(0),
-                    bypassReference.getReadPointer(0),
-                    static_cast<size_t>(buffer.getNumSamples()) * sizeof(float)) != 0)
-        return fail("1x bypass should be bit-transparent");
-
-    setParameter(processor, BrownHelp::oversamplingId, 2.0f);
-    buffer.clear();
-    processor.processBlock(buffer, midi);
-
-    if (processor.getLatencySamples() <= 0)
-        return fail("oversampling latency was not reported to the host");
-
-    setParameter(processor, BrownHelp::strengthId, 0.73f);
+    setParameter(processor, BrownHelp::lowShelfEnabledId, 1.0f);
+    setParameter(processor, BrownHelp::lowShelfReductionId, 7.3f);
+    setParameter(processor, BrownHelp::lowShelfSlopeId, 1.0f);
     juce::MemoryBlock state;
     processor.getStateInformation(state);
-    setParameter(processor, BrownHelp::strengthId, 0.1f);
+    setParameter(processor, BrownHelp::lowShelfReductionId, 0.0f);
     processor.setStateInformation(state.getData(), static_cast<int>(state.getSize()));
 
-    const auto restoredStrength = processor.getParameters().getRawParameterValue(BrownHelp::strengthId)->load();
+    const auto restored = processor.getParameters().getRawParameterValue(BrownHelp::lowShelfReductionId)->load();
+    if (std::abs(restored - 7.3f) > 0.01f)
+        return fail("new parameter state did not round-trip");
 
-    if (std::abs(restoredStrength - 0.73f) > 0.001f)
-        return fail("parameter state did not round-trip");
+    setParameter(processor, BrownHelp::bypassId, 1.0f);
+    buffer.clear();
+    processor.processBlock(buffer, midi);
+    for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
+            if (! std::isfinite(buffer.getSample(channel, sample)))
+                return fail("bypass produced a non-finite sample");
 
     std::cout << "BrownHelpProcessorTests passed\n";
     return 0;

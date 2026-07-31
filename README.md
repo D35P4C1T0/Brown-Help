@@ -1,153 +1,123 @@
 # Brown Help
 
-Brown Help is a VST3 tonal balancer for podcasts and voice-over work by **D35P Audio**.
+Brown Help is an automatic loudness and voice-band engineer for podcasts and voice-over work by **D35P Audio**.
 
 ![Brown Help plugin UI](docs/plugin-ui.png)
 
-It listens to the incoming voice, compares its broad spectral shape to a brown-noise-style tilt, and applies gentle adaptive EQ so dialogue settles closer to that target. It is meant as a practical "make this voice sit better" tool, not as a surgical repair plugin or a loudness maximizer.
+## What It Does
 
-## Status
-
-- Format: VST3
-- Framework: JUCE + CMake
-- Primary test host: REAPER on macOS
-- Supported channel layouts: mono and stereo
-- Intended platforms: macOS, Windows, Linux
-- Current maturity: early, usable, still evolving
-
-## Features
-
-- Adaptive spectral correction toward a brown-style target curve
-- Musical `Tilt` control from `0` to `100`, plus `Flip` for positive tilt
-- Gentle, Brown, and Dark target ranges up to `3`, `6`, and `9 dB/oct`
-- `Mix`, `Strength`, `Correction`, and `Speed` controls
-- User-selectable correction range with `Low` and `High`
-- Optional high-pass filter with `12 dB/oct` or `24 dB/oct` slope
-- Optional high-band saturation for soft voice presence
-- Smooth automatic output gain compensation and final output guard
-- 1x, 2x, and 4x saturation oversampling with reported host latency
-- Live graph of the correction currently being applied
-- Compact custom JUCE UI
+- Normalizes mono or stereo program loudness toward `-14 LUFS`
+- Uses a linked `5 ms` look-ahead limiter with a `0 dBFS` sample ceiling
+- Displays the processed output on a live log-frequency spectrum with `+4.5 dB/oct` display compensation
+- Learns the lowest voiced fundamental between `65-350 Hz`
+- Detects the strongest sibilance peak between `3.5-10 kHz`
+- Tracks the highest narrow-band RMS value at both learned frequencies
+- Applies cut-only dynamic peak EQ so both learned peaks share one level and neither exceeds `-40 dB RMS`
+- Provides optional low and high shelves with up to `12 dB` reduction and `12` or `18 dB/oct` slope choices
+- Includes a Reset Learn action that clears loudness and voice-band history for a new speaker or recording
 
 ## Signal Flow
 
 ```text
 Input
-  -> optional High-Pass
-  -> adaptive Brown Help EQ
-  -> optional High Saturation
-  -> automatic gain compensation
-  -> output guard
+  -> K-weighted gated loudness measurement
+  -> smooth stereo-linked gain toward -14 LUFS
+  -> fundamental and sibilance analysis
+  -> automatic cut-only F0 / S balancing
+  -> optional low shelf
+  -> optional high shelf
+  -> 5 ms linked look-ahead limiter at 0 dBFS
+  -> tilted output spectrum
 Output
 ```
 
-## How It Works
+## Analysis And Balancing
 
-### Low / High
+### Loudness
 
-`Low` and `High` define the frequency range where the adaptive correction is allowed to work. They are not filters.
+The loudness meter uses K-weighting plus absolute and relative gating modeled on ITU-R BS.1770. Its rolling history drives smooth linked gain, so stereo image does not move.
 
-Example: if `Low` is set to `100 Hz`, Brown Help stops correcting below `100 Hz`, but low-frequency audio can still pass through unless the high-pass filter is enabled.
+A real-time insert cannot know the integrated loudness of an entire file before hearing it. Brown Help therefore converges while audio plays. For exact whole-file delivery loudness from the first sample, use an offline two-pass loudness tool after rendering.
 
-### High-Pass
+### Fundamental
 
-`High Pass` is a real filter. It removes low-frequency audio before the adaptive EQ, which helps keep rumble, plosives, and mic handling noise from driving the detector.
+Voiced frames are low-pass isolated, then checked with normalized autocorrelation. Brown Help retains the lowest valid pitch since playback began or Reset Learn was pressed, then tracks the highest narrow-band RMS measurement at that frequency.
 
-### Adaptive EQ
+### Sibilance
 
-The processor uses log-spaced analysis bands inside the selected range. It smooths the detected spectrum across neighbouring bands so it follows broad tone instead of chasing individual harmonics and room resonances. A lower-density bank of peaking filters then applies the correction.
+Frames with enough `3.5-10 kHz` energy relative to the midrange are treated as sibilance candidates. Brown Help retains the frequency belonging to the strongest detected high-band event and its highest narrow-band RMS value.
 
-Cuts are stronger than boosts by design. Low-level bands receive less boost, and analysis disengages below a signal threshold. This lets the plugin tame harsh or over-present areas without aggressively lifting room tone, hiss, or noise.
+### Automatic Correction
 
-### Tilt
+Once both bands exist, Brown Help chooses the lower of:
 
-The `Tilt` knob is a musical control, not a raw slope parameter.
+- `-40 dB RMS`
+- learned fundamental peak
+- learned sibilance peak
 
-- `0` means flat target.
-- `100` maps to the selected curve's maximum negative slope.
-- `Flip` mirrors the curve to the positive side.
-- Gentle, Brown, and Dark provide maximum slopes of `3`, `6`, and `9 dB/oct`.
+Cut-only peak filters reduce each band to that common value. Missing bass or absent sibilance is never boosted, preventing room noise and hiss from being raised. Disable `Auto F0 / S Balance` to monitor without automatic EQ.
 
-### Saturation
+### Spectrum
 
-`High Saturation` is applied after the adaptive EQ. It affects the upper band only and is designed to add subtle density for spoken voice rather than obvious distortion.
+The graph shows processed output, not the detector input. Its display adds `4.5 dB/oct` relative to `1 kHz`; this is analyzer compensation only and does not alter sound. Amber marks learned fundamental. Teal marks learned sibilance. Marker labels show active correction.
 
-### Auto Gain And Output Guard
+### Shelves
 
-After EQ and saturation, Brown Help applies time-based automatic gain compensation to reduce perceived level drops without changing its behaviour with host block size. A final safety clip catches only samples beyond the output ceiling instead of turning down an entire block.
+Low and high shelves are optional cut-only finishing controls. Each offers:
 
-## Recommended Starting Point
+- Frequency
+- `0-12 dB` reduction
+- `12 dB/oct` or `18 dB/oct` transition
 
-- Curve: `Brown`
-- Tilt: `75` (`-4.5 dB/oct`)
-- Flip: off
-- Strength: `35%`
-- Mix: `100%`
-- Correction: `6 dB`
-- Speed: `45%`
-- Low: `70-100 Hz`
-- High: `16000-20000 Hz`
-- Oversampling: `1x` (raise it when using more saturation drive)
-- High Pass: optional, around `70-90 Hz`
-- Saturation: optional, low Drive and Mix
+## Status
 
-For normal podcast rendering in REAPER, start with `1x` oversampling and a Release build.
+- Formats: Audio Unit (`.component`) and VST3
+- Framework: JUCE 8 + CMake
+- Primary test host: REAPER on macOS
+- Channel layouts: mono and stereo
+- Platforms: macOS, Windows, Linux
+- Current version: `0.2.0`
 
 ## Building
 
 Requirements:
 
 - CMake 3.22+
-- A C++17 compiler
+- C++20 compiler
 - Git, so CMake can fetch JUCE
-
-Configure and build Release:
 
 ```sh
 cmake -S . -B build-release -DCMAKE_BUILD_TYPE=Release
 cmake --build build-release --config Release
-```
-
-Configure and build Debug:
-
-```sh
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build --config Debug
-```
-
-Run tests:
-
-```sh
-ctest --test-dir build --output-on-failure
 ctest --test-dir build-release --output-on-failure
 ```
 
-Release VST3 output:
+Release plugins:
 
 ```text
+build-release/BrownHelp_artefacts/Release/AU/Brown Help.component
 build-release/BrownHelp_artefacts/Release/VST3/Brown Help.vst3
 ```
 
-On macOS, copy the `.vst3` bundle to:
+On macOS, copy bundles to:
 
 ```text
+~/Library/Audio/Plug-Ins/Components/
 ~/Library/Audio/Plug-Ins/VST3/
 ```
 
 Then rescan plugins in REAPER.
 
-## Development Notes
+## Development
 
-- The plugin code lives in `Source/`.
-- Parameter IDs and defaults live in `Source/Parameters.h`.
-- UI styling and shared controls are split across `Source/UiStyle.h`, `Source/ParameterFormatting.h`, and `Source/BrownHelpUiComponents.*`.
-- DSP behavior is centered around `Source/BrownCurveBalancer.*` and `Source/BrownHelpProcessor.*`.
-- Tests live in `Tests/`.
-
-Use Debug builds while developing, but judge CPU cost and render speed from Release builds only.
+- Main DSP: `Source/VoiceEngineer.*`
+- Processor and state: `Source/BrownHelpProcessor.*`
+- Spectrum and editor: `Source/BrownHelpUiComponents.*`, `Source/BrownHelpEditor.*`
+- Parameter IDs/defaults: `Source/Parameters.h`
+- Tests: `Tests/`
 
 ## License
 
-Brown Help is released under the GNU General Public License v3.0 only. See [LICENSE](LICENSE).
+Brown Help is released under GNU General Public License v3.0 only. See [LICENSE](LICENSE).
 
-This project uses JUCE. If you distribute binaries commercially or want to use a non-GPL license, check the current JUCE licensing terms and obtain the appropriate JUCE license.
+This project uses JUCE. Commercial binary distribution may require an appropriate JUCE license.
