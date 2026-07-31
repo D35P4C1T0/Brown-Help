@@ -101,10 +101,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout BrownHelpProcessor::createPa
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> layout;
     layout.push_back(std::make_unique<juce::AudioParameterBool>(autoBalanceId, "Auto Balance", true));
+    layout.push_back(std::make_unique<juce::AudioParameterBool>(
+        manualFundamentalEnabledId, "Manual Fundamental", false));
+    layout.push_back(std::make_unique<juce::AudioParameterFloat>(
+        manualFundamentalFrequencyId, "Manual Fundamental Frequency",
+        juce::NormalisableRange<float>(100.0f, 600.0f, 0.1f, 0.4f), 125.0f,
+        juce::AudioParameterFloatAttributes().withLabel("Hz")));
     layout.push_back(std::make_unique<juce::AudioParameterBool>(lowShelfEnabledId, "Low Shelf", false));
     layout.push_back(std::make_unique<juce::AudioParameterFloat>(
         lowShelfFrequencyId, "Low Shelf Frequency",
-        juce::NormalisableRange<float>(40.0f, 500.0f, 0.1f, 0.4f), 120.0f,
+        juce::NormalisableRange<float>(20.0f, 500.0f, 0.1f, 0.4f), 120.0f,
         juce::AudioParameterFloatAttributes().withLabel("Hz")));
     layout.push_back(std::make_unique<juce::AudioParameterFloat>(
         lowShelfReductionId, "Low Shelf Reduction",
@@ -115,7 +121,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout BrownHelpProcessor::createPa
     layout.push_back(std::make_unique<juce::AudioParameterBool>(highShelfEnabledId, "High Shelf", false));
     layout.push_back(std::make_unique<juce::AudioParameterFloat>(
         highShelfFrequencyId, "High Shelf Frequency",
-        juce::NormalisableRange<float>(2000.0f, 12000.0f, 1.0f, 0.4f), 6500.0f,
+        juce::NormalisableRange<float>(2000.0f, 20000.0f, 1.0f, 0.4f), 6500.0f,
         juce::AudioParameterFloatAttributes().withLabel("Hz")));
     layout.push_back(std::make_unique<juce::AudioParameterFloat>(
         highShelfReductionId, "High Shelf Reduction",
@@ -131,6 +137,8 @@ VoiceEngineer::Settings BrownHelpProcessor::readSettings() const
 {
     VoiceEngineer::Settings settings;
     settings.autoBalance = parameterValue<float>(parameters, autoBalanceId) >= 0.5f;
+    settings.manualFundamentalEnabled = parameterValue<float>(parameters, manualFundamentalEnabledId) >= 0.5f;
+    settings.manualFundamentalFrequencyHz = parameterValue<float>(parameters, manualFundamentalFrequencyId);
     settings.lowShelfEnabled = parameterValue<float>(parameters, lowShelfEnabledId) >= 0.5f;
     settings.lowShelfFrequencyHz = parameterValue<float>(parameters, lowShelfFrequencyId);
     settings.lowShelfReductionDb = parameterValue<float>(parameters, lowShelfReductionId);

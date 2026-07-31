@@ -3,6 +3,8 @@
 namespace BrownHelp
 {
 inline constexpr auto autoBalanceId = "autoBalance";
+inline constexpr auto manualFundamentalEnabledId = "manualFundamentalEnabled";
+inline constexpr auto manualFundamentalFrequencyId = "manualFundamentalFrequency";
 inline constexpr auto lowShelfEnabledId = "lowShelfEnabled";
 inline constexpr auto lowShelfFrequencyId = "lowShelfFrequency";
 inline constexpr auto lowShelfReductionId = "lowShelfReduction";

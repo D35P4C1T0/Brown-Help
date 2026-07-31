@@ -42,7 +42,12 @@ void SpectrumAnalyzer::paint(juce::Graphics& graphics)
 
     auto header = getLocalBounds().reduced(14, 8).removeFromTop(42);
     const auto metricWidth = std::max(120, header.getWidth() / 5);
-    const std::array<juce::String, 5> titles { "LOUDNESS", "NORMALIZER", "FUNDAMENTAL", "SIBILANCE", "LIMITER" };
+    const auto fundamentalMode = snapshot.fundamentalIsManual
+                                     ? juce::String("MANUAL")
+                                     : juce::String(static_cast<int>(std::round(snapshot.fundamentalConfidence * 100.0f))) + "%";
+    const std::array<juce::String, 5> titles {
+        "LOUDNESS", "NORMALIZER", "FUNDAMENTAL  " + fundamentalMode, "SIBILANCE", "LIMITER"
+    };
     const std::array<juce::String, 5> values {
         levelText(snapshot.loudnessLufs, " LUFS"),
         levelText(snapshot.normalizerGainDb, " dB"),

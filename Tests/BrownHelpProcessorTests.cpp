@@ -27,6 +27,13 @@ int main()
     if (processor.getLatencySamples() != 240)
         return fail("processor did not report limiter latency");
 
+    const auto* lowShelfFrequency = processor.getParameters().getParameter(BrownHelp::lowShelfFrequencyId);
+    const auto* highShelfFrequency = processor.getParameters().getParameter(BrownHelp::highShelfFrequencyId);
+    if (std::abs(lowShelfFrequency->convertFrom0to1(0.0f) - 20.0f) > 0.01f)
+        return fail("low shelf does not extend to 20 Hz");
+    if (std::abs(highShelfFrequency->convertFrom0to1(1.0f) - 20000.0f) > 0.01f)
+        return fail("high shelf does not extend to 20 kHz");
+
     juce::MidiBuffer midi;
     juce::AudioBuffer<float> buffer(2, 512);
     for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
@@ -47,6 +54,8 @@ int main()
     setParameter(processor, BrownHelp::lowShelfEnabledId, 1.0f);
     setParameter(processor, BrownHelp::lowShelfReductionId, 7.3f);
     setParameter(processor, BrownHelp::lowShelfSlopeId, 1.0f);
+    setParameter(processor, BrownHelp::manualFundamentalEnabledId, 1.0f);
+    setParameter(processor, BrownHelp::manualFundamentalFrequencyId, 173.0f);
     juce::MemoryBlock state;
     processor.getStateInformation(state);
     setParameter(processor, BrownHelp::lowShelfReductionId, 0.0f);
@@ -55,6 +64,10 @@ int main()
     const auto restored = processor.getParameters().getRawParameterValue(BrownHelp::lowShelfReductionId)->load();
     if (std::abs(restored - 7.3f) > 0.01f)
         return fail("new parameter state did not round-trip");
+    const auto restoredManual = processor.getParameters().getRawParameterValue(
+        BrownHelp::manualFundamentalFrequencyId)->load();
+    if (std::abs(restoredManual - 173.0f) > 0.01f)
+        return fail("manual fundamental state did not round-trip");
 
     setParameter(processor, BrownHelp::bypassId, 1.0f);
     buffer.clear();

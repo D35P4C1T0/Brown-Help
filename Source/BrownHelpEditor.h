@@ -36,15 +36,19 @@ private:
     juce::TextButton bypassButton;
     juce::TextButton resetButton;
     juce::ToggleButton autoBalanceButton;
+    juce::ToggleButton manualFundamentalButton;
     juce::ToggleButton lowShelfButton;
     juce::ToggleButton highShelfButton;
     juce::Slider lowFrequencySlider;
+    juce::Slider manualFundamentalSlider;
     juce::Slider lowReductionSlider;
     juce::Slider highFrequencySlider;
     juce::Slider highReductionSlider;
     juce::ComboBox lowSlopeBox;
     juce::ComboBox highSlopeBox;
     juce::Label autoBalanceLabel;
+    juce::Label manualFundamentalLabel;
+    juce::Label manualFundamentalFrequencyLabel;
     juce::Label lowFrequencyLabel;
     juce::Label lowReductionLabel;
     juce::Label lowSlopeLabel;
@@ -54,9 +58,11 @@ private:
 
     std::unique_ptr<ButtonAttachment> bypassAttachment;
     std::unique_ptr<ButtonAttachment> autoBalanceAttachment;
+    std::unique_ptr<ButtonAttachment> manualFundamentalAttachment;
     std::unique_ptr<ButtonAttachment> lowShelfAttachment;
     std::unique_ptr<ButtonAttachment> highShelfAttachment;
     std::unique_ptr<SliderAttachment> lowFrequencyAttachment;
+    std::unique_ptr<SliderAttachment> manualFundamentalFrequencyAttachment;
     std::unique_ptr<SliderAttachment> lowReductionAttachment;
     std::unique_ptr<SliderAttachment> highFrequencyAttachment;
     std::unique_ptr<SliderAttachment> highReductionAttachment;

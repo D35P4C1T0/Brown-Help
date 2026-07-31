@@ -9,11 +9,13 @@ Brown Help is an automatic loudness and voice-band engineer for podcasts and voi
 - Normalizes mono or stereo program loudness toward `-14 LUFS`
 - Uses a linked `5 ms` look-ahead limiter with a `0 dBFS` sample ceiling
 - Displays the processed output on a live log-frequency spectrum with `+4.5 dB/oct` display compensation
-- Learns the lowest voiced fundamental between `65-350 Hz`
+- Tracks voiced fundamental between `100-600 Hz` with YIN, confidence gating, and first-crest validation
+- Provides a manual `100-600 Hz` fundamental override
 - Detects the strongest sibilance peak between `3.5-10 kHz`
 - Tracks the highest narrow-band RMS value at both learned frequencies
 - Applies cut-only dynamic peak EQ so both learned peaks share one level and neither exceeds `-40 dB RMS`
 - Provides optional low and high shelves with up to `12 dB` reduction and `12` or `18 dB/oct` slope choices
+- Extends low-shelf frequency down to `20 Hz` and high-shelf frequency up to `20 kHz`
 - Includes a Reset Learn action that clears loudness and voice-band history for a new speaker or recording
 
 ## Signal Flow
@@ -41,7 +43,9 @@ A real-time insert cannot know the integrated loudness of an entire file before 
 
 ### Fundamental
 
-Voiced frames are low-pass isolated, then checked with normalized autocorrelation. Brown Help retains the lowest valid pitch since playback began or Reset Learn was pressed, then tracks the highest narrow-band RMS measurement at that frequency.
+Voiced speech is DC/rumble filtered, low-pass isolated, and decimated before pitch analysis. YIN runs on `40 ms` frames at roughly `5 ms` hops, searches only `100-600 Hz`, rejects weak periodicity, interpolates between lag samples, and median-filters five results. FFT validation prefers the first credible spectral crest from `100 Hz` upward and corrects common octave-high errors.
+
+Manual F0 bypasses automatic pitch selection while retaining RMS measurement and automatic F0/S balancing at the selected frequency.
 
 ### Sibilance
 
@@ -69,6 +73,8 @@ Low and high shelves are optional cut-only finishing controls. Each offers:
 - `0-12 dB` reduction
 - `12 dB/oct` or `18 dB/oct` transition
 
+Low shelf covers `20-500 Hz`. High shelf covers `2-20 kHz` where sample rate permits.
+
 ## Status
 
 - Formats: Audio Unit (`.component`) and VST3
@@ -76,7 +82,7 @@ Low and high shelves are optional cut-only finishing controls. Each offers:
 - Primary test host: REAPER on macOS
 - Channel layouts: mono and stereo
 - Platforms: macOS, Windows, Linux
-- Current version: `0.2.0`
+- Current version: `0.3.0`
 
 ## Building
 

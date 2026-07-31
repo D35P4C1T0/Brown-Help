@@ -23,7 +23,7 @@ BrownHelpEditor::BrownHelpEditor(BrownHelpProcessor& processorToUse)
     resetButton.setButtonText("RESET LEARN");
     resetButton.onClick = [this] { audioProcessor.resetLearning(); };
 
-    for (auto* button : { &autoBalanceButton, &lowShelfButton, &highShelfButton })
+    for (auto* button : { &autoBalanceButton, &manualFundamentalButton, &lowShelfButton, &highShelfButton })
     {
         addAndMakeVisible(button);
         button->setButtonText({});
@@ -34,6 +34,12 @@ BrownHelpEditor::BrownHelpEditor(BrownHelpProcessor& processorToUse)
     autoBalanceLabel.setColour(juce::Label::textColourId, juce::Colour(textColour));
     autoBalanceLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
 
+    addAndMakeVisible(manualFundamentalLabel);
+    manualFundamentalLabel.setText("MANUAL F0", juce::dontSendNotification);
+    manualFundamentalLabel.setColour(juce::Label::textColourId, juce::Colour(textColour));
+    manualFundamentalLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
+
+    configureSlider(manualFundamentalSlider, manualFundamentalFrequencyLabel, "Fundamental");
     configureSlider(lowFrequencySlider, lowFrequencyLabel, "Frequency");
     configureSlider(lowReductionSlider, lowReductionLabel, "Reduction");
     configureSlider(highFrequencySlider, highFrequencyLabel, "Frequency");
@@ -57,16 +63,20 @@ BrownHelpEditor::BrownHelpEditor(BrownHelpProcessor& processorToUse)
 
     bypassAttachment = std::make_unique<ButtonAttachment>(audioProcessor.getParameters(), bypassId, bypassButton);
     autoBalanceAttachment = std::make_unique<ButtonAttachment>(audioProcessor.getParameters(), autoBalanceId, autoBalanceButton);
+    manualFundamentalAttachment = std::make_unique<ButtonAttachment>(
+        audioProcessor.getParameters(), manualFundamentalEnabledId, manualFundamentalButton);
     lowShelfAttachment = std::make_unique<ButtonAttachment>(audioProcessor.getParameters(), lowShelfEnabledId, lowShelfButton);
     highShelfAttachment = std::make_unique<ButtonAttachment>(audioProcessor.getParameters(), highShelfEnabledId, highShelfButton);
     lowFrequencyAttachment = std::make_unique<SliderAttachment>(audioProcessor.getParameters(), lowShelfFrequencyId, lowFrequencySlider);
+    manualFundamentalFrequencyAttachment = std::make_unique<SliderAttachment>(
+        audioProcessor.getParameters(), manualFundamentalFrequencyId, manualFundamentalSlider);
     lowReductionAttachment = std::make_unique<SliderAttachment>(audioProcessor.getParameters(), lowShelfReductionId, lowReductionSlider);
     highFrequencyAttachment = std::make_unique<SliderAttachment>(audioProcessor.getParameters(), highShelfFrequencyId, highFrequencySlider);
     highReductionAttachment = std::make_unique<SliderAttachment>(audioProcessor.getParameters(), highShelfReductionId, highReductionSlider);
     lowSlopeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.getParameters(), lowShelfSlopeId, lowSlopeBox);
     highSlopeAttachment = std::make_unique<ComboBoxAttachment>(audioProcessor.getParameters(), highShelfSlopeId, highSlopeBox);
 
-    for (auto* slider : { &lowFrequencySlider, &highFrequencySlider })
+    for (auto* slider : { &manualFundamentalSlider, &lowFrequencySlider, &highFrequencySlider })
     {
         slider->textFromValueFunction = ParameterFormatting::frequency;
         slider->valueFromTextFunction = ParameterFormatting::frequencyFromText;
@@ -84,11 +94,12 @@ BrownHelpEditor::BrownHelpEditor(BrownHelpProcessor& processorToUse)
         };
     }
 
-    for (auto* slider : { &lowFrequencySlider, &lowReductionSlider, &highFrequencySlider, &highReductionSlider })
+    for (auto* slider : { &manualFundamentalSlider, &lowFrequencySlider, &lowReductionSlider,
+                          &highFrequencySlider, &highReductionSlider })
         slider->updateText();
 
     startTimerHz(12);
-    setSize(980, 610);
+    setSize(980, 650);
     updateState();
 }
 
@@ -115,9 +126,9 @@ void BrownHelpEditor::paint(juce::Graphics& graphics)
     area.removeFromTop(52);
     area.removeFromTop(330);
     area.removeFromTop(10);
-    auto deck = area.removeFromTop(186);
-    auto autoPanel = deck.removeFromLeft(220);
-    auto lowPanel = deck.removeFromLeft(363);
+    auto deck = area.removeFromTop(226);
+    auto autoPanel = deck.removeFromLeft(280);
+    auto lowPanel = deck.removeFromLeft(342);
     auto highPanel = deck;
     drawPanel(graphics, autoPanel, "ENGINEER");
     drawPanel(graphics, lowPanel, "OPTIONAL LOW SHELF");
@@ -128,7 +139,7 @@ void BrownHelpEditor::paint(juce::Graphics& graphics)
     graphics.drawVerticalLine(lowPanel.getRight(), static_cast<float>(lowPanel.getY() + 12), static_cast<float>(lowPanel.getBottom() - 12));
 
     auto info = autoPanel.reduced(14);
-    info.removeFromTop(70);
+    info.removeFromTop(130);
     graphics.setColour(juce::Colour(mutedTextColour));
     graphics.setFont(juce::FontOptions(10.0f));
     graphics.drawFittedText("TARGET  -14 LUFS\nCEILING  0 dBFS\nBANDS  <= -40 dB RMS",
@@ -147,15 +158,19 @@ void BrownHelpEditor::resized()
     area.removeFromTop(8);
     spectrum.setBounds(area.removeFromTop(330));
     area.removeFromTop(10);
-    auto deck = area.removeFromTop(186);
-    auto autoPanel = deck.removeFromLeft(220).reduced(14);
-    auto lowPanel = deck.removeFromLeft(363).reduced(14);
+    auto deck = area.removeFromTop(226);
+    auto autoPanel = deck.removeFromLeft(280).reduced(14);
+    auto lowPanel = deck.removeFromLeft(342).reduced(14);
     auto highPanel = deck.reduced(14);
 
     autoPanel.removeFromTop(32);
-    auto autoRow = autoPanel.removeFromTop(28);
-    autoBalanceLabel.setBounds(autoRow.removeFromLeft(158));
+    auto autoRow = autoPanel.removeFromTop(25);
+    autoBalanceLabel.setBounds(autoRow.removeFromLeft(190));
     autoBalanceButton.setBounds(autoRow.withSizeKeepingCentre(34, 18));
+    auto manualRow = autoPanel.removeFromTop(25);
+    manualFundamentalLabel.setBounds(manualRow.removeFromLeft(190));
+    manualFundamentalButton.setBounds(manualRow.withSizeKeepingCentre(34, 18));
+    layoutSlider(manualFundamentalSlider, manualFundamentalFrequencyLabel, autoPanel.removeFromTop(43));
 
     lowShelfButton.setBounds(lowPanel.getRight() - 38, lowPanel.getY() - 5, 34, 18);
     lowPanel.removeFromTop(30);
@@ -211,6 +226,7 @@ void BrownHelpEditor::updateState()
 {
     const auto lowEnabled = parameter(audioProcessor.getParameters(), lowShelfEnabledId) >= 0.5f;
     const auto highEnabled = parameter(audioProcessor.getParameters(), highShelfEnabledId) >= 0.5f;
+    const auto manualFundamentalEnabled = parameter(audioProcessor.getParameters(), manualFundamentalEnabledId) >= 0.5f;
     const auto bypassed = parameter(audioProcessor.getParameters(), bypassId) >= 0.5f;
 
     for (auto* component : { static_cast<juce::Component*>(&lowFrequencySlider), static_cast<juce::Component*>(&lowFrequencyLabel),
@@ -225,8 +241,14 @@ void BrownHelpEditor::updateState()
 
     for (auto* component : { static_cast<juce::Component*>(&spectrum), static_cast<juce::Component*>(&autoBalanceButton),
                              static_cast<juce::Component*>(&autoBalanceLabel), static_cast<juce::Component*>(&lowShelfButton),
-                             static_cast<juce::Component*>(&highShelfButton), static_cast<juce::Component*>(&resetButton) })
+                             static_cast<juce::Component*>(&highShelfButton), static_cast<juce::Component*>(&resetButton),
+                             static_cast<juce::Component*>(&manualFundamentalButton),
+                             static_cast<juce::Component*>(&manualFundamentalLabel) })
         component->setAlpha(bypassed ? 0.35f : 1.0f);
+
+    for (auto* component : { static_cast<juce::Component*>(&manualFundamentalSlider),
+                             static_cast<juce::Component*>(&manualFundamentalFrequencyLabel) })
+        component->setAlpha(manualFundamentalEnabled && ! bypassed ? 1.0f : 0.35f);
 
     bypassButton.setColour(juce::TextButton::buttonColourId, bypassed ? juce::Colour(accentColour) : juce::Colour(plotColour));
     bypassButton.setColour(juce::TextButton::textColourOffId, bypassed ? juce::Colour(backgroundColour) : juce::Colour(textColour));

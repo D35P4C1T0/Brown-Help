@@ -18,6 +18,8 @@ public:
     struct Settings
     {
         bool autoBalance = true;
+        bool manualFundamentalEnabled = false;
+        float manualFundamentalFrequencyHz = 125.0f;
         bool lowShelfEnabled = false;
         float lowShelfFrequencyHz = 120.0f;
         float lowShelfReductionDb = 0.0f;
@@ -35,6 +37,8 @@ public:
         float loudnessLufs = -100.0f;
         float normalizerGainDb = 0.0f;
         float fundamentalHz = 0.0f;
+        float fundamentalConfidence = 0.0f;
+        bool fundamentalIsManual = false;
         float fundamentalRmsDb = -100.0f;
         float sibilanceHz = 0.0f;
         float sibilanceRmsDb = -100.0f;
@@ -55,6 +59,15 @@ private:
     static constexpr int fftOrder = 12;
     static constexpr int fftSize = 1 << fftOrder;
     static constexpr int loudnessHistorySize = 1200;
+    static constexpr int maximumPitchFrameSize = 1024;
+    static constexpr int pitchHistorySize = 5;
+
+    struct PitchResult
+    {
+        float frequencyHz = 0.0f;
+        float confidence = 0.0f;
+        bool voiced = false;
+    };
 
     void updateLoudness(const juce::AudioBuffer<float>& buffer);
     void applyNormalization(juce::AudioBuffer<float>& buffer);
@@ -67,7 +80,10 @@ private:
     void updateShelfFilters(const Settings& settings, int channels);
     void applyShelves(juce::AudioBuffer<float>& buffer, const Settings& settings);
     void applyLimiter(juce::AudioBuffer<float>& buffer, bool limitingEnabled);
-    float estimateFundamentalHz() const;
+    void pushPitchSample(float sample);
+    void analysePitchFrame();
+    PitchResult estimateFundamental() const;
+    float firstVoiceCrestHz() const;
     float rmsNearFrequency(float frequencyHz, int halfWidthBins) const;
     float bandRms(float lowHz, float highHz) const;
     float peakFrequency(float lowHz, float highHz) const;
@@ -96,7 +112,6 @@ private:
 
     juce::dsp::FFT fft { fftOrder };
     std::array<float, fftSize> analysisFifo {};
-    std::array<float, fftSize> pitchFifo {};
     std::array<float, fftSize * 2> fftData {};
     std::array<float, fftSize / 2 + 1> binRms {};
     std::array<float, fftSize> displayFifo {};
@@ -106,10 +121,26 @@ private:
     int analysisFifoPosition = 0;
     int displayFifoPosition = 0;
     float windowSum = 1.0f;
+    std::array<float, maximumPitchFrameSize> pitchFrame {};
+    std::array<float, pitchHistorySize> pitchHistory {};
+    int pitchFrameSize = 480;
+    int pitchHopSize = 60;
+    int pitchDecimation = 4;
+    int pitchDecimationCounter = 0;
+    int pitchWritePosition = 0;
+    int pitchSamplesCollected = 0;
+    int pitchHopCounter = 0;
+    int pitchHistoryCount = 0;
+    int pitchHistoryPosition = 0;
+    float pitchSampleRate = 12000.0f;
+    float pitchPreviousInput = 0.0f;
+    float pitchHighPassOutput = 0.0f;
     float pitchLowPassOne = 0.0f;
     float pitchLowPassTwo = 0.0f;
 
     float learnedFundamentalHz = 0.0f;
+    float activeFundamentalHz = 0.0f;
+    float fundamentalConfidence = 0.0f;
     float fundamentalPeakRmsDb = -100.0f;
     float learnedSibilanceHz = 0.0f;
     float sibilancePeakRmsDb = -100.0f;
@@ -121,6 +152,7 @@ private:
     float appliedSibilanceGainDb = 100.0f;
 
     Settings previousShelfSettings;
+    Settings currentSettings;
     bool shelfSettingsValid = false;
 
     std::vector<std::vector<float>> limiterDelay;
@@ -135,6 +167,8 @@ private:
     std::atomic<float> publishedLufs { -100.0f };
     std::atomic<float> publishedNormalizerGainDb { 0.0f };
     std::atomic<float> publishedFundamentalHz { 0.0f };
+    std::atomic<float> publishedFundamentalConfidence { 0.0f };
+    std::atomic<bool> publishedFundamentalIsManual { false };
     std::atomic<float> publishedFundamentalRmsDb { -100.0f };
     std::atomic<float> publishedSibilanceHz { 0.0f };
     std::atomic<float> publishedSibilanceRmsDb { -100.0f };
